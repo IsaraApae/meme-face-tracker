@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brainrot Meme Face Tracker</title>
+<style>
+  :root {
+    --bg: #0e0e14;
+    --panel: #1a1a24;
+    --accent: #7c5cff;
+    --text: #f0f0f5;
+    --muted: #8888a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    min-height: 100vh;
+  }
+  #stage {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #videoWrap {
+    position: relative;
+    width: 100%;
+    max-width: 960px;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  video, #overlay {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform: scaleX(-1); /* mirror like a selfie cam */
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  #memePopup {
+    position: absolute;
+    pointer-events: none;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    transform: translate(-50%, -100%);
+    transition: left .12s linear, top .12s linear;
+    z-index: 5;
+  }
+  #memePopup.visible { display: flex; }
+  #memePopup .bubble {
+    background: rgba(255,255,255,.95);
+    border-radius: 18px;
+    padding: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+    animation: pop .18s ease-out;
+  }
+  @keyframes pop {
+    from { transform: scale(.4); opacity: 0; }
+    to   { transform: scale(1);  opacity: 1; }
+  }
+  #memePopup img {
+    display: block;
+    max-width: 260px;
+    max-height: 220px;
+    border-radius: 10px;
+  }
+  #memePopup .emoji {
+    font-size: 110px;
+    line-height: 1;
+  }
+  #memeLabel {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 800;
+    letter-spacing: 2px;
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-size: 15px;
+    text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  #status {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,.65);
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--muted);
+    z-index: 10;
+    white-space: nowrap;
+  }
+  #debug {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(0,0,0,.6);
+    font: 11px/1.5 ui-monospace, monospace;
+    padding: 8px 10px;
+    border-radius: 8px;
+    display: none;
+    z-index: 10;
+  }
+  #panel {
+    width: 330px;
+    background: var(--panel);
+    padding: 18px;
+    overflow-y: auto;
+    max-height: 100vh;
+    flex-shrink: 0;
+  }
+  #panel h1 { font-size: 18px; margin: 0 0 4px; }
+  #panel p.hint { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
+  .toggles { display: flex; gap: 14px; margin-bottom: 14px; font-size: 13px; }
+  .toggles label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .slot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #23232f;
+    border-radius: 12px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    border: 2px solid transparent;
+    transition: border-color .15s;
+  }
+  .slot.active { border-color: var(--accent); background: #2c2440; }
+  .slot .thumb {
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    background: #101018;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .slot .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .slot .info { flex: 1; min-width: 0; }
+  .slot .info .name { font-weight: 700; font-size: 13px; }
+  .slot .info .trigger { color: var(--muted); font-size: 11px; }
+  .slot button {
+    background: #33334a;
+    color: var(--text);
+    border: 0;
+    border-radius: 7px;
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .slot button:hover { background: var(--accent); }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="videoWrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="memePopup">
+      <div class="bubble" id="memeBubble"><div class="emoji">😐</div></div>
+      <div id="memeLabel"></div>
+    </div>
+    <div id="status">Loading face + hand models…</div>
+    <div id="debug"></div>
+  </div>
+</div>
+
+<aside id="panel">
+  <h1>🧠 Brainrot Meme Tracker</h1>
+  <p class="hint">Make the face or do the gesture — the meme pops up. Click 📁 on any slot to swap in your own image or GIF (saved in your browser).</p>
+  <div class="toggles">
+    <label><input type="checkbox" id="meshToggle" checked> Tracking dots</label>
+    <label><input type="checkbox" id="debugToggle"> Debug values</label>
+  </div>
+  <div id="slots"></div>
+</aside>
+
+<input type="file" id="filePicker" accept="image/*" hidden>
+
+<script type="module">
+// Load the vision library from the local vendor folder when possible (fully
+// offline); fall back to the CDN when the page is opened without the folder.
+const CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+let FaceLandmarker, GestureRecognizer, FilesetResolver;
+let LOCAL_ASSETS = true;
+
+async function loadVisionLib() {
+  let mod;
+  try {
+    mod = await import("./vendor/vision_bundle.mjs");
+  } catch {
+    mod = await import(CDN);
+    LOCAL_ASSETS = false;
+  }
+  ({ FaceLandmarker, GestureRecognizer, FilesetResolver } = mod);
+}
+
+// ---------- helpers used by expression scores ----------
+const avg = (a, b) => (a + b) / 2;
+
+// hand landmark indices: 0 wrist, 4 thumb tip, 8 index tip, 9 middle MCP (palm
+// center), 20 pinky tip; PIPs at tip-2
+function fingerExtended(lm, tip, pip) {
+  const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+  return d(tip, 0) > d(pip, 0) * 1.1;
+}
+
+function nosePinch(hands, faceLm) {
+  if (!hands || !faceLm) return 0;
+  const nose = faceLm[1];
+  for (const lm of hands.landmarks) {
+    const t = lm[4], i = lm[8];
+    const pinch = Math.hypot(t.x - i.x, t.y - i.y);
+    const midX = (t.x + i.x) / 2, midY = (t.y + i.y) / 2;
+    if (pinch < 0.09 && Math.hypot(midX - nose.x, midY - nose.y) < 0.10) return 1;
+  }
+  return 0;
+}
+
+// 🤙 thumb + pinky out, other fingers curled (ILoveYou is close enough too)
+function shaka(hands) {
+  if (!hands) return 0;
+  for (let h = 0; h < hands.landmarks.length; h++) {
+    if (hands.names[h] === "ILoveYou") return 1;
+    const lm = hands.landmarks[h];
+    const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y);
+    const thumbOut = d(4, 17) > d(2, 17); // thumb tip far from pinky base
+    if (thumbOut && fingerExtended(lm, 20, 18) &&
+        !fingerExtended(lm, 8, 6) && !fingerExtended(lm, 12, 10) && !fingerExtended(lm, 16, 14))
+      return 1;
+  }
+  return 0;
+}
+
+// Tongue out: the face model has no tongue signal, so sample the pixels
+// between the inner lips — a stuck-out tongue is bright and red-dominant,
+// while an open mouth without a tongue is a dark cavity.
+const sampCanvas = document.createElement("canvas");
+sampCanvas.width = 12;
+sampCanvas.height = 12;
+const sampCtx = sampCanvas.getContext("2d", { willReadFrequently: true });
+let tongueDebug = "";
+
+function tongueOut(faceLm, b) {
+  if (!faceLm || !b || b.jawOpen < 0.15) { tongueDebug = "mouth closed"; return 0; }
+  const cx = (faceLm[13].x + faceLm[14].x) / 2; // between inner lips
+  const cy = (faceLm[13].y + faceLm[14].y) / 2;
+  const mouthW = Math.hypot(
+    (faceLm[61].x - faceLm[291].x) * video.videoWidth,
+    (faceLm[61].y - faceLm[291].y) * video.videoHeight
+  );
+  const s = Math.max(mouthW * 0.45, 8);
+  sampCtx.drawImage(video,
+    cx * video.videoWidth - s / 2, cy * video.videoHeight - s / 2, s, s,
+    0, 0, 12, 12);
+  const d = sampCtx.getImageData(0, 0, 12, 12).data;
+  let r = 0, g = 0, bl = 0;
+  const n = d.length / 4;
+  for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; bl += d[i + 2]; }
+  r /= n; g /= n; bl /= n;
+  const bright = (r + g + bl) / 3;
+  const reddish = r > g * 1.15 && r > bl * 1.1;
+  tongueDebug = `bright ${bright | 0} rgb ${r | 0}/${g | 0}/${bl | 0}`;
+  return bright > 60 && reddish ? 1 : 0;
+}
+
+// index finger pointing at your own chest (below the chin)
+function pointAtSelf(hands, faceLm) {
+  if (!hands || !faceLm) return 0;
+  const chin = faceLm[152];
+  for (const lm of hands.landmarks) {
+    const tip = lm[8];
+    if (fingerExtended(lm, 8, 6) &&
+        Math.abs(tip.x - chin.x) < 0.14 &&
+        tip.y > chin.y + 0.01 && tip.y < chin.y + 0.33) return 1;
+  }
+  return 0;
+}
+
+// both palm centers raised above nose level
+function handsOnHead(hands, faceLm) {
+  if (!hands || !faceLm || hands.landmarks.length < 2) return 0;
+  return hands.landmarks.every(lm => lm[9].y < faceLm[1].y) ? 1 : 0;
+}
+
+// at least one hand raised to face/chest height, where you'd hold a paper up
+// (a real paper hides most of the hand, so requiring both hands fails a lot)
+function holdingPaper(hands, faceLm) {
+  if (!hands || !faceLm) return 0;
+  const nose = faceLm[1], chin = faceLm[152];
+  for (const lm of hands.landmarks) {
+    const y = lm[9].y;
+    if (y > nose.y && y < chin.y + 0.35) return 1;
+  }
+  return 0;
+}
+
+// how far the head is tilted back: nose tip rises above ear line when you look up.
+// ~0 facing forward, ~0.3+ clearly facing up. Normalized by ear-to-ear width.
+function pitchUp(faceLm) {
+  if (!faceLm) return 0;
+  const earY = avg(faceLm[234].y, faceLm[454].y);
+  const scale = Math.abs(faceLm[454].x - faceLm[234].x) || 1e-3;
+  return (earY - faceLm[1].y) / scale;
+}
+
+// ---------- meme definitions ----------
+// score() receives { b: blendshapes|null, hands, faceLm, motionA, motionB }.
+// Highest score/threshold ratio above 1 wins. holdFrames = frames a match must
+// persist before it takes over (stops blinks/flickers).
+const EXPRESSIONS = [
+  {
+    id: "67", name: "6 7", emoji: "🤷", trigger: "bounce both hands up & down",
+    threshold: 0.5, holdFrames: 2,
+    score: c => {
+      if (!c.hands) return 0;
+      const a = c.motionA, b = c.motionB;
+      return a.len >= 10 && b.len >= 10 &&
+             a.travel > 0.10 && b.travel > 0.10 &&
+             a.changes >= 2 && b.changes >= 2 ? 1 : 0;
+    },
+  },
+  {
+    id: "cinema", name: "ABSOLUTE CINEMA", emoji: "🎬", trigger: "hold both palms out, still",
+    threshold: 0.5, holdFrames: 3,
+    score: c => {
+      if (!c.hands || c.hands.landmarks.length !== 2) return 0;
+      if (!c.hands.names.every(n => n === "Open_Palm")) return 0;
+      if (c.b && c.b.jawOpen > 0.35) return 0;
+      const a = c.motionA, b = c.motionB;
+      return a.len >= 15 && b.len >= 15 && a.travel < 0.05 && b.travel < 0.05 ? 1 : 0;
+    },
+  },
+  {
+    id: "noway", name: "NO WAY", emoji: "😱", trigger: "jaw drop + hands on your head",
+    threshold: 0.5, holdFrames: 3,
+    score: c => c.b && c.b.jawOpen > 0.4 && handsOnHead(c.hands, c.faceLm) ? 1 : 0,
+  },
+  {
+    id: "scuba", name: "SCUBA", emoji: "🤿", trigger: "pinch your nose (scuba dance)",
+    threshold: 0.5, holdFrames: 3,
+    score: c => nosePinch(c.hands, c.faceLm),
+  },
+  {
+    id: "nerd", name: "ERM, ACTUALLY", emoji: "🤓", trigger: "point up ☝️",
+    threshold: 0.5, holdFrames: 3,
+    score: c => c.hands && c.hands.names.includes("Pointing_Up") ? 1 : 0,
+  },
+  {
+    id: "holdup", name: "HOLD UP", emoji: "✋", trigger: "one palm out to the camera",
+    threshold: 0.5, holdFrames: 5,
+    score: c => c.hands && c.hands.landmarks.length === 1 &&
+                c.hands.names[0] === "Open_Palm" ? 1 : 0,
+  },
+  {
+    id: "sillycat", name: "SILLY CAT", emoji: "😛", trigger: "tongue out 😝 + 🤙 hand",
+    threshold: 0.5, holdFrames: 4,
+    score: c => tongueOut(c.faceLm, c.b) && shaka(c.hands) ? 1 : 0,
+  },
+  {
+    id: "whome", name: "WHO, ME?", emoji: "😦", trigger: "point at your chest",
+    threshold: 0.5, holdFrames: 5,
+    score: c => pointAtSelf(c.hands, c.faceLm),
+  },
+  {
+    id: "jimmy", name: "JIMMY", emoji: "🧐", trigger: "hold a paper up + squint 📄",
+    threshold: 0.42, holdFrames: 4,
+    score: c => !c.b ? 0 :
+      avg(c.b.eyeSquintLeft, c.b.eyeSquintRight) *
+      (1 - c.b.mouthPucker) *
+      holdingPaper(c.hands, c.faceLm),
+  },
+  {
+    id: "speed", name: "SPEED", emoji: "😖", trigger: "IShowSpeed scrunch (eyes shut + pucker)",
+    threshold: 0.4, holdFrames: 4,
+    score: c => !c.b ? 0 :
+      Math.min(avg(c.b.eyeBlinkLeft, c.b.eyeBlinkRight),
+               (c.b.mouthPucker + avg(c.b.noseSneerLeft, c.b.noseSneerRight)) * 1.4),
+  },
+  {
+    id: "chilldog", name: "CHILL DOG", emoji: "🐶", trigger: "close your eyes & tilt head up ☀️",
+    threshold: 0.45, holdFrames: 6,
+    score: c => {
+      if (!c.b || !c.faceLm) return 0;
+      if (pitchUp(c.faceLm) < 0.15) return 0;
+      return avg(c.b.eyeBlinkLeft, c.b.eyeBlinkRight) * (1 - c.b.mouthPucker);
+    },
+  },
+];
+
+// real meme images bundled in ./memes — emoji is the fallback
+const DEFAULT_IMAGES = {
+  "67": "memes/67.jpg",
+  cinema: "memes/cinema.jpg",
+  noway: "memes/noway.webp",
+  scuba: "memes/scuba.jpg",
+  nerd: "memes/nerd.jpg",
+  holdup: "memes/holdup.webp",
+  sillycat: "memes/sillycat.webp",
+  whome: "memes/whome.webp",
+  jimmy: "memes/jimmy.webp",
+  speed: "memes/speed.webp",
+  chilldog: "memes/chilldog.webp",
+};
+
+// ---------- dom ----------
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+const statusEl = document.getElementById("status");
+const debugEl = document.getElementById("debug");
+const popup = document.getElementById("memePopup");
+const bubble = document.getElementById("memeBubble");
+const labelEl = document.getElementById("memeLabel");
+const slotsEl = document.getElementById("slots");
+const filePicker = document.getElementById("filePicker");
+const meshToggle = document.getElementById("meshToggle");
+const debugToggle = document.getElementById("debugToggle");
+
+// ---------- custom images (localStorage overrides bundled defaults) ----------
+const customImages = {};
+for (const e of EXPRESSIONS) {
+  const saved = localStorage.getItem("meme_" + e.id);
+  if (saved) customImages[e.id] = saved;
+}
+const imageFor = id => customImages[id] || DEFAULT_IMAGES[id] || null;
+
+let pickingFor = null;
+filePicker.addEventListener("change", () => {
+  const file = filePicker.files[0];
+  filePicker.value = "";
+  if (!file || !pickingFor) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    customImages[pickingFor] = reader.result;
+    try {
+      localStorage.setItem("meme_" + pickingFor, reader.result);
+    } catch {
+      alert("Image too large to save between sessions — it will still work until you reload.");
+    }
+    renderSlots();
+  };
+  reader.readAsDataURL(file);
+});
+
+function renderSlots() {
+  slotsEl.innerHTML = "";
+  for (const e of EXPRESSIONS) {
+    const div = document.createElement("div");
+    div.className = "slot";
+    div.id = "slot_" + e.id;
+    const img = imageFor(e.id);
+    div.innerHTML = `
+      <div class="thumb">${img ? `<img src="${img}">` : e.emoji}</div>
+      <div class="info">
+        <div class="name">${e.name}</div>
+        <div class="trigger">${e.trigger}</div>
+      </div>
+      <button data-act="pick" title="Use your own image/GIF">📁</button>
+      ${customImages[e.id] ? '<button data-act="reset" title="Back to default">✕</button>' : ""}
+    `;
+    div.querySelector('[data-act="pick"]').onclick = () => {
+      pickingFor = e.id;
+      filePicker.click();
+    };
+    const resetBtn = div.querySelector('[data-act="reset"]');
+    if (resetBtn) resetBtn.onclick = () => {
+      delete customImages[e.id];
+      localStorage.removeItem("meme_" + e.id);
+      renderSlots();
+    };
+    slotsEl.appendChild(div);
+  }
+}
+renderSlots();
+
+// ---------- meme popup state (hysteresis so it doesn't flicker) ----------
+const MIN_SHOW_MS = 700;
+let current = null;
+let currentSince = 0;
+let candidate = null;
+let candidateFrames = 0;
+
+function showMeme(expr) {
+  const img = imageFor(expr.id);
+  bubble.innerHTML = img
+    ? `<img src="${img}">`
+    : `<div class="emoji">${expr.emoji}</div>`;
+  labelEl.textContent = expr.name;
+  popup.classList.add("visible");
+  document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
+  document.getElementById("slot_" + expr.id)?.classList.add("active");
+}
+
+function hideMeme() {
+  popup.classList.remove("visible");
+  document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
+}
+
+function updateExpression(context) {
+  let best = null, bestRatio = 1;
+  for (const e of EXPRESSIONS) {
+    const ratio = e.score(context) / e.threshold;
+    if (ratio > bestRatio) { bestRatio = ratio; best = e; }
+  }
+  const now = performance.now();
+  const id = best ? best.id : null;
+
+  if (id === current) { candidate = null; candidateFrames = 0; return; }
+
+  if (id === candidate) candidateFrames++;
+  else { candidate = id; candidateFrames = 1; }
+
+  const needed = best ? best.holdFrames : 8; // frames of "nothing" before hiding
+  const heldLongEnough = !current || now - currentSince > MIN_SHOW_MS;
+
+  if (candidateFrames >= needed && heldLongEnough) {
+    current = id;
+    currentSince = now;
+    candidate = null;
+    candidateFrames = 0;
+    if (best) showMeme(best); else hideMeme();
+  }
+}
+
+// ---------- hand vertical-motion tracking (6-7 bounce vs cinema stillness) ----------
+const HIST = 32; // ~1 second of frames
+let trackA = [], trackB = [];
+
+function motionStats(track) {
+  let travel = 0, changes = 0, prevDir = 0;
+  for (let i = 1; i < track.length; i++) {
+    const dy = track[i] - track[i - 1];
+    travel += Math.abs(dy);
+    // 0.008/frame gate: slow drift while talking shouldn't count as a bounce
+    const dir = dy > 0.008 ? 1 : dy < -0.008 ? -1 : 0;
+    if (dir !== 0) {
+      if (prevDir !== 0 && dir !== prevDir) changes++;
+      prevDir = dir;
+    }
+  }
+  return { travel, changes, len: track.length };
+}
+
+let emptyFrames = 0;
+
+function updateTracks(hands) {
+  if (!hands || hands.landmarks.length === 0) {
+    // fast-moving hands drop out for a frame or two — don't wipe history instantly
+    if (++emptyFrames > 5) { trackA = []; trackB = []; }
+    return;
+  }
+  emptyFrames = 0;
+  if (hands.landmarks.length >= 2) {
+    const sorted = [...hands.landmarks].sort((a, b) => a[9].x - b[9].x);
+    trackA.push(sorted[0][9].y);
+    trackB.push(sorted[1][9].y);
+  } else {
+    const lm = hands.landmarks[0]; // single hand: route to its side's track
+    (lm[9].x < 0.5 ? trackA : trackB).push(lm[9].y);
+  }
+  if (trackA.length > HIST) trackA.shift();
+  if (trackB.length > HIST) trackB.shift();
+}
+
+// ---------- drawing ----------
+function drawPoints(points, color, size) {
+  ctx.fillStyle = color;
+  for (const p of points) {
+    ctx.fillRect(p.x * overlay.width - size / 2, p.y * overlay.height - size / 2, size, size);
+  }
+}
+
+// ---------- popup positioning (video is mirrored, so flip x) ----------
+function positionPopup(faceLm, hands) {
+  const pts = faceLm || (hands && hands.landmarks.flat());
+  if (!pts) return;
+  let minX = 1, maxX = 0, minY = 1;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+  }
+  const wrap = video.getBoundingClientRect();
+  const midX = (minX + maxX) / 2;
+  popup.style.left = (1 - midX) * wrap.width + "px";
+  popup.style.top = Math.max(minY * wrap.height - 8, 8) + "px";
+}
+
+// ---------- main ----------
+let faceLandmarker, gestureRecognizer;
+
+async function init() {
+  try {
+    await loadVisionLib();
+    const wasmBase = LOCAL_ASSETS ? "vendor/wasm" : CDN + "/wasm";
+    const faceModel = LOCAL_ASSETS
+      ? "vendor/models/face_landmarker.task"
+      : "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+    const gestureModel = LOCAL_ASSETS
+      ? "vendor/models/gesture_recognizer.task"
+      : "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
+    const resolver = await FilesetResolver.forVisionTasks(wasmBase);
+    [faceLandmarker, gestureRecognizer] = await Promise.all([
+      FaceLandmarker.createFromOptions(resolver, {
+        baseOptions: { modelAssetPath: faceModel, delegate: "GPU" },
+        outputFaceBlendshapes: true,
+        runningMode: "VIDEO",
+        numFaces: 1,
+      }),
+      GestureRecognizer.createFromOptions(resolver, {
+        baseOptions: { modelAssetPath: gestureModel, delegate: "GPU" },
+        runningMode: "VIDEO",
+        numHands: 2,
+      }),
+    ]);
+  } catch (err) {
+    statusEl.textContent = "Failed to load models — check your internet connection.";
+    console.error(err);
+    return;
+  }
+
+  statusEl.textContent = "Requesting camera…";
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: "user" },
+    });
+    video.srcObject = stream;
+    await new Promise(r => (video.onloadedmetadata = r));
+  } catch (err) {
+    statusEl.textContent = "Camera blocked — allow camera access and reload.";
+    console.error(err);
+    return;
+  }
+
+  overlay.width = video.videoWidth;
+  overlay.height = video.videoHeight;
+  statusEl.textContent = "Try: 🤲 bounce hands (6-7) · ✋✋ hold still (cinema) · 🤿 pinch nose · 🤙";
+  setTimeout(() => (statusEl.style.display = "none"), 7000);
+  requestAnimationFrame(loop);
+}
+
+let lastVideoTime = -1;
+
+function loop() {
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const ts = performance.now();
+    const faceResult = faceLandmarker.detectForVideo(video, ts);
+    const handResult = gestureRecognizer.recognizeForVideo(video, ts);
+
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    const faceLm = faceResult.faceLandmarks?.[0] || null;
+    let blend = null;
+    const shapes = faceResult.faceBlendshapes?.[0]?.categories;
+    if (shapes) {
+      blend = {};
+      for (const c of shapes) blend[c.categoryName] = c.score;
+    }
+
+    let hands = null;
+    if (handResult.landmarks?.length) {
+      hands = {
+        landmarks: handResult.landmarks,
+        names: handResult.gestures.map(g => g[0]?.categoryName || "None"),
+      };
+    }
+    updateTracks(hands);
+    const motionA = motionStats(trackA);
+    const motionB = motionStats(trackB);
+
+    if (meshToggle.checked) {
+      if (faceLm) drawPoints(faceLm, "rgba(124, 92, 255, 0.85)", 2);
+      if (hands) for (const lm of hands.landmarks) drawPoints(lm, "rgba(92, 255, 170, 0.9)", 5);
+    }
+
+    if (faceLm || hands) positionPopup(faceLm, hands);
+    updateExpression({ b: blend, hands, faceLm, motionA, motionB });
+
+    if (debugToggle.checked) {
+      debugEl.style.display = "block";
+      const lines = [];
+      if (hands) {
+        lines.push("hands: " + hands.names.join(", "));
+        lines.push(`motion A: travel ${motionA.travel.toFixed(2)} changes ${motionA.changes}`);
+        lines.push(`motion B: travel ${motionB.travel.toFixed(2)} changes ${motionB.changes}`);
+        if (faceLm) lines.push("nosePinch: " + nosePinch(hands, faceLm) +
+                               " pointSelf: " + pointAtSelf(hands, faceLm) +
+                               " paper: " + holdingPaper(hands, faceLm) +
+                               " shaka: " + shaka(hands));
+      }
+      if (faceLm) lines.push("pitchUp: " + pitchUp(faceLm).toFixed(2) +
+                             " · tongue: " + tongueDebug);
+      if (shapes) lines.push(...shapes
+        .filter(c => c.score > 0.2 && c.categoryName !== "_neutral")
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map(c => `${c.categoryName}: ${c.score.toFixed(2)}`));
+      debugEl.innerHTML = lines.join("<br>") || "(neutral)";
+    } else {
+      debugEl.style.display = "none";
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+init();
+</script>
+</body>
+</html>
