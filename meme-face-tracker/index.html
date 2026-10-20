@@ -38,12 +38,17 @@
     background: #000;
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
   }
-  video, #overlay {
+  video, #overlay, #photo {
     display: block;
     width: 100%;
     height: auto;
     transform: scaleX(-1); /* mirror like a selfie cam */
   }
+  #photo { display: none; }
+  /* photo mode: show the picture as-is (not mirrored) */
+  #videoWrap.photo video { display: none; }
+  #videoWrap.photo #photo { display: block; transform: none; }
+  #videoWrap.photo #overlay { transform: none; }
   #overlay {
     position: absolute;
     inset: 0;
@@ -91,6 +96,7 @@
     border-radius: 999px;
     font-size: 15px;
     text-shadow: 0 1px 2px rgba(0,0,0,.4);
+    white-space: nowrap;
   }
   #status {
     position: absolute;
@@ -104,6 +110,30 @@
     color: var(--muted);
     z-index: 10;
     white-space: nowrap;
+  }
+  #snapBtn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 11;
+    background: rgba(0,0,0,.55);
+    color: #fff;
+    border: 0;
+    border-radius: 999px;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    cursor: pointer;
+  }
+  #snapBtn:hover { background: var(--accent); }
+  #flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 12;
+    transition: opacity .25s;
   }
   #debug {
     position: absolute;
@@ -126,8 +156,20 @@
   }
   #panel h1 { font-size: 18px; margin: 0 0 4px; }
   #panel p.hint { color: var(--muted); font-size: 12px; margin: 0 0 14px; }
-  .toggles { display: flex; gap: 14px; margin-bottom: 14px; font-size: 13px; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13px; }
   .toggles label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+  .actions { display: flex; gap: 8px; margin-bottom: 14px; }
+  .actions button {
+    flex: 1;
+    background: #33334a;
+    color: var(--text);
+    border: 0;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .actions button:hover { background: var(--accent); }
   .slot {
     display: flex;
     align-items: center;
@@ -138,6 +180,7 @@
     margin-bottom: 8px;
     border: 2px solid transparent;
     transition: border-color .15s;
+    cursor: pointer;
   }
   .slot.active { border-color: var(--accent); background: #2c2440; }
   .slot .thumb {
@@ -155,6 +198,7 @@
   .slot .thumb img { width: 100%; height: 100%; object-fit: cover; }
   .slot .info { flex: 1; min-width: 0; }
   .slot .info .name { font-weight: 700; font-size: 13px; }
+  .slot .info .meme { color: #b8a8ff; font-size: 11px; font-style: italic; }
   .slot .info .trigger { color: var(--muted); font-size: 11px; }
   .slot button {
     background: #33334a;
@@ -181,18 +225,19 @@
     #memePopup img { max-width: 42vw; max-height: 34vh; }
     #memePopup .emoji { font-size: 72px; }
     #memeLabel { font-size: 13px; padding: 3px 11px; }
-    #status { font-size: 11px; padding: 5px 12px; white-space: normal; text-align: center; max-width: 92%; }
+    #status { font-size: 11px; padding: 5px 12px; white-space: normal; text-align: center; max-width: 80%; }
     /* bigger tap targets on touch screens */
     .slot { padding: 10px; }
     .slot button { padding: 9px 12px; font-size: 15px; }
-    .toggles { font-size: 15px; gap: 20px; }
+    .toggles { font-size: 15px; gap: 10px 20px; }
+    .actions button { padding: 11px; font-size: 15px; }
     h1 { font-size: 20px; }
   }
 
   /* avoid sticky :hover staying highlighted after a tap on touch devices */
   @media (hover: none) {
-    .slot button:hover { background: #33334a; }
-    .slot button:active { background: var(--accent); }
+    .slot button:hover, .actions button:hover, #snapBtn:hover { background: #33334a; }
+    .slot button:active, .actions button:active, #snapBtn:active { background: var(--accent); }
   }
 </style>
 </head>
@@ -201,27 +246,35 @@
 <div id="stage">
   <div id="videoWrap">
     <video id="video" autoplay playsinline muted></video>
+    <img id="photo" alt="">
     <canvas id="overlay"></canvas>
     <div id="memePopup">
       <div class="bubble" id="memeBubble"><div class="emoji">😐</div></div>
       <div id="memeLabel"></div>
     </div>
     <div id="status">Loading face + hand models…</div>
+    <button id="snapBtn" title="Save a snapshot with the meme">📸</button>
+    <div id="flash"></div>
     <div id="debug"></div>
   </div>
 </div>
 
 <aside id="panel">
   <h1>🧠 Brainrot Meme Tracker</h1>
-  <p class="hint">Make the face or do the gesture — the meme pops up. Click 📁 on any slot to swap in your own image or GIF (saved in your browser).</p>
+  <p class="hint">Make the face or do the gesture — the meme pops up. Tap a meme to preview it, or 📁 to swap in your own image or GIF (saved in your browser).</p>
   <div class="toggles">
     <label><input type="checkbox" id="meshToggle" checked> Tracking dots</label>
+    <label><input type="checkbox" id="soundToggle"> Vine boom 🔊</label>
     <label><input type="checkbox" id="debugToggle"> Debug values</label>
+  </div>
+  <div class="actions">
+    <button id="photoBtn" title="No camera? Test the tracker on a picture">🖼 Try a photo</button>
   </div>
   <div id="slots"></div>
 </aside>
 
 <input type="file" id="filePicker" accept="image/*" hidden>
+<input type="file" id="photoPicker" accept="image/*" hidden>
 
 <script type="module">
 // Load the vision library from the local vendor folder when possible (fully
@@ -241,8 +294,18 @@ async function loadVisionLib() {
   ({ FaceLandmarker, GestureRecognizer, FilesetResolver } = mod);
 }
 
+// localStorage can throw (private mode, blocked site data) — never let it break the page
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); return true; } catch { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+
 // ---------- helpers used by expression scores ----------
 const avg = (a, b) => (a + b) / 2;
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+// ear-to-ear width, used to make distances independent of how close you sit
+const faceWidth = lm => Math.abs(lm[454].x - lm[234].x) || 1e-3;
 
 // hand landmark indices: 0 wrist, 4 thumb tip, 8 index tip, 9 middle MCP (palm
 // center), 20 pinky tip; PIPs at tip-2
@@ -251,14 +314,17 @@ function fingerExtended(lm, tip, pip) {
   return d(tip, 0) > d(pip, 0) * 1.1;
 }
 
+function isPinching(lm) {
+  return Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y) < 0.09;
+}
+
 function nosePinch(hands, faceLm) {
   if (!hands || !faceLm) return 0;
   const nose = faceLm[1];
   for (const lm of hands.landmarks) {
     const t = lm[4], i = lm[8];
-    const pinch = Math.hypot(t.x - i.x, t.y - i.y);
     const midX = (t.x + i.x) / 2, midY = (t.y + i.y) / 2;
-    if (pinch < 0.09 && Math.hypot(midX - nose.x, midY - nose.y) < 0.10) return 1;
+    if (isPinching(lm) && Math.hypot(midX - nose.x, midY - nose.y) < 0.10) return 1;
   }
   return 0;
 }
@@ -289,15 +355,16 @@ let tongueDebug = "";
 
 function tongueOut(faceLm, b) {
   if (!faceLm || !b || b.jawOpen < 0.15) { tongueDebug = "mouth closed"; return 0; }
+  const w = srcW(), h = srcH();
   const cx = (faceLm[13].x + faceLm[14].x) / 2; // between inner lips
   const cy = (faceLm[13].y + faceLm[14].y) / 2;
   const mouthW = Math.hypot(
-    (faceLm[61].x - faceLm[291].x) * video.videoWidth,
-    (faceLm[61].y - faceLm[291].y) * video.videoHeight
+    (faceLm[61].x - faceLm[291].x) * w,
+    (faceLm[61].y - faceLm[291].y) * h
   );
   const s = Math.max(mouthW * 0.45, 8);
-  sampCtx.drawImage(video,
-    cx * video.videoWidth - s / 2, cy * video.videoHeight - s / 2, s, s,
+  sampCtx.drawImage(srcEl(),
+    cx * w - s / 2, cy * h - s / 2, s, s,
     0, 0, 12, 12);
   const d = sampCtx.getImageData(0, 0, 12, 12).data;
   let r = 0, g = 0, bl = 0;
@@ -341,22 +408,99 @@ function holdingPaper(hands, faceLm) {
   return 0;
 }
 
+// 🧠 Roll Safe: index fingertip on a temple, ring + pinky curled
+const TEMPLES = [21, 251, 54, 284, 127, 356, 162, 389];
+function tapTemple(hands, faceLm) {
+  if (!hands || !faceLm) return 0;
+  const fw = faceWidth(faceLm);
+  for (const lm of hands.landmarks) {
+    if (!fingerExtended(lm, 8, 6) || fingerExtended(lm, 16, 14) || fingerExtended(lm, 20, 18)) continue;
+    const tip = lm[8];
+    if (tip.y > faceLm[1].y) continue; // temple is above the nose tip
+    if (TEMPLES.some(i => dist(tip, faceLm[i]) < fw * 0.3)) return 1;
+  }
+  return 0;
+}
+
+// ☎️ hand held up beside the ear like a phone (Harold). Holding a handset puts
+// the palm out past the cheek, so the zone reaches well beyond the ear.
+function phoneToEar(hands, faceLm) {
+  if (!hands || !faceLm || tapTemple(hands, faceLm)) return 0; // finger on temple = Roll Safe
+  const fw = faceWidth(faceLm);
+  const earA = faceLm[234], earB = faceLm[454];
+  const [left, right] = earA.x < earB.x ? [earA, earB] : [earB, earA];
+  for (const lm of hands.landmarks) {
+    const palm = lm[9];
+    if (palm.y < faceLm[168].y - fw * 0.25 || palm.y > faceLm[152].y) continue;
+    if (dist(palm, left) < fw * 0.9 && palm.x < left.x + fw * 0.15) return 1;
+    if (dist(palm, right) < fw * 0.9 && palm.x > right.x - fw * 0.15) return 1;
+  }
+  return 0;
+}
+
+// 🤦 a palm over your eyes / forehead (not a nose pinch)
+function palmOnFace(hands, faceLm) {
+  if (!hands || !faceLm) return 0;
+  const fw = faceWidth(faceLm);
+  for (const lm of hands.landmarks) {
+    const palm = lm[9];
+    if (isPinching(lm)) continue;
+    // in front of the eyes/forehead — hands on top of or beside the head don't count
+    if (palm.y < faceLm[1].y && palm.y > faceLm[10].y &&
+        Math.abs(palm.x - faceLm[168].x) < fw * 0.32) return 1;
+  }
+  return 0;
+}
+
+// any hand up near the face (used to keep face-only memes from firing mid-gesture)
+function handNearFace(hands, faceLm) {
+  if (!hands || !faceLm) return 0;
+  const fw = faceWidth(faceLm);
+  return hands.landmarks.some(lm => dist(lm[9], faceLm[1]) < fw * 1.3) ? 1 : 0;
+}
+
+// head turned left/right: nose tip offset from the ear midpoint, ~0 facing the camera
+function yaw(faceLm) {
+  return (faceLm[1].x - avg(faceLm[234].x, faceLm[454].x)) / faceWidth(faceLm);
+}
+
+// 🤨 one eyebrow up: compare brow-to-eyelid gaps of both sides, plus the blendshapes
+function oneBrowUp(faceLm, b) {
+  if (!faceLm || !b) return 0;
+  // a wink or a squinting eye shifts the eyelid, which isn't a brow raise
+  if (Math.abs(b.eyeBlinkLeft - b.eyeBlinkRight) > 0.3 || Math.max(b.eyeBlinkLeft, b.eyeBlinkRight) > 0.5) return 0;
+  const fw = faceWidth(faceLm);
+  const gapA = (faceLm[159].y - faceLm[105].y) / fw;
+  const gapB = (faceLm[386].y - faceLm[334].y) / fw;
+  const geo = Math.abs(gapA - gapB) / Math.max(gapA, gapB, 1e-3);
+  const blend = Math.abs((b.browOuterUpLeft - b.browDownLeft) - (b.browOuterUpRight - b.browDownRight));
+  return Math.max(geo * 1.5, blend);
+}
+
+// 👀 eyes turned hard to one side
+function sideEye(b) {
+  if (!b || avg(b.eyeBlinkLeft, b.eyeBlinkRight) > 0.4) return 0;
+  return Math.max(avg(b.eyeLookOutLeft, b.eyeLookInRight), avg(b.eyeLookInLeft, b.eyeLookOutRight));
+}
+
 // how far the head is tilted back: nose tip rises above ear line when you look up.
 // ~0 facing forward, ~0.3+ clearly facing up. Normalized by ear-to-ear width.
 function pitchUp(faceLm) {
   if (!faceLm) return 0;
   const earY = avg(faceLm[234].y, faceLm[454].y);
-  const scale = Math.abs(faceLm[454].x - faceLm[234].x) || 1e-3;
-  return (earY - faceLm[1].y) / scale;
+  return (earY - faceLm[1].y) / faceWidth(faceLm);
 }
 
 // ---------- meme definitions ----------
-// score() receives { b: blendshapes|null, hands, faceLm, motionA, motionB }.
-// Highest score/threshold ratio above 1 wins. holdFrames = frames a match must
-// persist before it takes over (stops blinks/flickers).
+// score() receives { b: blendshapes|null, hands, faceLm, tongue, motionA, motionB }.
+// Highest score/threshold ratio above 1 wins; on a tie the earlier entry wins,
+// so more specific gestures are listed before looser ones. holdFrames = frames
+// a match must persist before it takes over (stops blinks/flickers).
+// `meme` is the name the meme is known by online (shown in the sidebar).
 const EXPRESSIONS = [
   {
-    id: "67", name: "6 7", emoji: "🤷", trigger: "bounce both hands up & down",
+    id: "67", name: "6 7", meme: "67 Kid / Six Seven", emoji: "🤷",
+    trigger: "bounce both hands up & down",
     threshold: 0.5, holdFrames: 2,
     score: c => {
       if (!c.hands) return 0;
@@ -367,7 +511,8 @@ const EXPRESSIONS = [
     },
   },
   {
-    id: "cinema", name: "ABSOLUTE CINEMA", emoji: "🎬", trigger: "hold both palms out, still",
+    id: "cinema", name: "ABSOLUTE CINEMA", meme: "Martin Scorsese – Absolute Cinema", emoji: "🎬",
+    trigger: "hold both palms out, still",
     threshold: 0.5, holdFrames: 3,
     score: c => {
       if (!c.hands || c.hands.landmarks.length !== 2) return 0;
@@ -378,38 +523,76 @@ const EXPRESSIONS = [
     },
   },
   {
-    id: "noway", name: "NO WAY", emoji: "😱", trigger: "jaw drop + hands on your head",
+    id: "noway", name: "NO WAY", meme: "Shocked Guy (hands on head)", emoji: "😱",
+    trigger: "jaw drop + hands on your head",
     threshold: 0.5, holdFrames: 3,
     score: c => c.b && c.b.jawOpen > 0.4 && handsOnHead(c.hands, c.faceLm) ? 1 : 0,
   },
   {
-    id: "scuba", name: "SCUBA", emoji: "🤿", trigger: "pinch your nose (scuba dance)",
+    id: "pikachu", name: "SURPRISED PIKACHU", meme: "Surprised Pikachu", emoji: "😮",
+    trigger: "mouth wide open + eyebrows up (no hands)",
+    threshold: 0.5, holdFrames: 5,
+    score: c => {
+      if (!c.b || c.tongue || handNearFace(c.hands, c.faceLm)) return 0;
+      const surprise = avg(c.b.browInnerUp, avg(c.b.eyeWideLeft, c.b.eyeWideRight));
+      return Math.min(c.b.jawOpen * 1.4, surprise * 1.6);
+    },
+  },
+  {
+    id: "scuba", name: "SCUBA", meme: "Scuba Dance", emoji: "🤿",
+    trigger: "pinch your nose (scuba dance)",
     threshold: 0.5, holdFrames: 3,
     score: c => nosePinch(c.hands, c.faceLm),
   },
   {
-    id: "nerd", name: "ERM, ACTUALLY", emoji: "🤓", trigger: "point up ☝️",
-    threshold: 0.5, holdFrames: 3,
-    score: c => c.hands && c.hands.names.includes("Pointing_Up") ? 1 : 0,
+    id: "rollsafe", name: "ROLL SAFE", meme: "Roll Safe – Think About It", emoji: "🧠",
+    trigger: "tap your temple with one finger",
+    threshold: 0.5, holdFrames: 4,
+    score: c => tapTemple(c.hands, c.faceLm),
   },
   {
-    id: "holdup", name: "HOLD UP", emoji: "✋", trigger: "one palm out to the camera",
+    id: "nerd", name: "ERM, ACTUALLY", meme: "☝️🤓 Nerd Emoji", emoji: "🤓",
+    trigger: "point up ☝️",
+    threshold: 0.5, holdFrames: 3,
+    score: c => c.hands && c.hands.names.includes("Pointing_Up") &&
+                !tapTemple(c.hands, c.faceLm) ? 1 : 0,
+  },
+  {
+    id: "facepalm", name: "FACEPALM", meme: "Picard Facepalm", emoji: "🤦",
+    trigger: "palm over your eyes / forehead",
+    threshold: 0.5, holdFrames: 4,
+    score: c => (c.b && c.b.jawOpen > 0.4 ? 0 : palmOnFace(c.hands, c.faceLm)), // jaw drop = NO WAY
+  },
+  {
+    id: "holdup", name: "HOLD UP", meme: "Hol' Up", emoji: "✋",
+    trigger: "one palm out to the camera",
     threshold: 0.5, holdFrames: 5,
     score: c => c.hands && c.hands.landmarks.length === 1 &&
-                c.hands.names[0] === "Open_Palm" ? 1 : 0,
+                c.hands.names[0] === "Open_Palm" &&
+                !palmOnFace(c.hands, c.faceLm) && !phoneToEar(c.hands, c.faceLm) ? 1 : 0,
   },
   {
-    id: "sillycat", name: "SILLY CAT", emoji: "😛", trigger: "tongue out 😝 + 🤙 hand",
+    id: "sillycat", name: "SILLY CAT", meme: "Silly Cat 🤙", emoji: "😛",
+    trigger: "tongue out 😝 + 🤙 hand",
     threshold: 0.5, holdFrames: 4,
-    score: c => tongueOut(c.faceLm, c.b) && shaka(c.hands) ? 1 : 0,
+    score: c => c.tongue && shaka(c.hands) ? 1 : 0,
   },
   {
-    id: "whome", name: "WHO, ME?", emoji: "😦", trigger: "point at your chest",
+    id: "harold", name: "HIDE THE PAIN", meme: "Hide the Pain Harold", emoji: "☎️",
+    trigger: "phone to your ear + big (fake) smile",
+    threshold: 0.5, holdFrames: 4,
+    score: c => c.b && avg(c.b.mouthSmileLeft, c.b.mouthSmileRight) > 0.45 &&
+                phoneToEar(c.hands, c.faceLm) ? 1 : 0,
+  },
+  {
+    id: "whome", name: "WHO, ME?", meme: "Guy Pointing at Himself", emoji: "😦",
+    trigger: "point at your chest",
     threshold: 0.5, holdFrames: 5,
     score: c => pointAtSelf(c.hands, c.faceLm),
   },
   {
-    id: "jimmy", name: "JIMMY", emoji: "🧐", trigger: "hold a paper up + squint 📄",
+    id: "jimmy", name: "JIMMY BUTLER", meme: "Jimmy Butler Reading", emoji: "🧐",
+    trigger: "hold a paper up + squint 📄",
     threshold: 0.42, holdFrames: 4,
     score: c => !c.b ? 0 :
       avg(c.b.eyeSquintLeft, c.b.eyeSquintRight) *
@@ -417,14 +600,16 @@ const EXPRESSIONS = [
       holdingPaper(c.hands, c.faceLm),
   },
   {
-    id: "speed", name: "SPEED", emoji: "😖", trigger: "IShowSpeed scrunch (eyes shut + pucker)",
+    id: "speed", name: "SPEED", meme: "IShowSpeed scrunch face", emoji: "😖",
+    trigger: "IShowSpeed scrunch (eyes shut + pucker)",
     threshold: 0.4, holdFrames: 4,
     score: c => !c.b ? 0 :
       Math.min(avg(c.b.eyeBlinkLeft, c.b.eyeBlinkRight),
                (c.b.mouthPucker + avg(c.b.noseSneerLeft, c.b.noseSneerRight)) * 1.4),
   },
   {
-    id: "chilldog", name: "CHILL DOG", emoji: "🐶", trigger: "close your eyes & tilt head up ☀️",
+    id: "cookeddog", name: "COOKED DOG", meme: "Cooked Dog / Dog Closing His Eyes", emoji: "🐶",
+    trigger: "close your eyes & tilt head up ☀️",
     threshold: 0.45, holdFrames: 6,
     score: c => {
       if (!c.b || !c.faceLm) return 0;
@@ -432,25 +617,27 @@ const EXPRESSIONS = [
       return avg(c.b.eyeBlinkLeft, c.b.eyeBlinkRight) * (1 - c.b.mouthPucker);
     },
   },
+  {
+    id: "rock", name: "THE ROCK 🤨", meme: "The Rock's Eyebrow Raise", emoji: "🤨",
+    trigger: "raise ONE eyebrow",
+    threshold: 0.45, holdFrames: 5,
+    score: c => handNearFace(c.hands, c.faceLm) ? 0 : oneBrowUp(c.faceLm, c.b),
+  },
+  {
+    id: "monkey", name: "AWKWARD MONKEY", meme: "Awkward Look Monkey Puppet", emoji: "🙈",
+    trigger: "look away with just your eyes 👀",
+    threshold: 0.55, holdFrames: 6,
+    score: c => handNearFace(c.hands, c.faceLm) ? 0 : sideEye(c.b),
+  },
 ];
 
 // real meme images bundled in ./memes — emoji is the fallback
-const DEFAULT_IMAGES = {
-  "67": "memes/67.jpg",
-  cinema: "memes/cinema.jpg",
-  noway: "memes/noway.webp",
-  scuba: "memes/scuba.jpg",
-  nerd: "memes/nerd.jpg",
-  holdup: "memes/holdup.webp",
-  sillycat: "memes/sillycat.webp",
-  whome: "memes/whome.webp",
-  jimmy: "memes/jimmy.webp",
-  speed: "memes/speed.webp",
-  chilldog: "memes/chilldog.webp",
-};
+const DEFAULT_IMAGES = Object.fromEntries(EXPRESSIONS.map(e => [e.id, `memes/${e.id}.webp`]));
 
 // ---------- dom ----------
 const video = document.getElementById("video");
+const photo = document.getElementById("photo");
+const wrapEl = document.getElementById("videoWrap");
 const overlay = document.getElementById("overlay");
 const ctx = overlay.getContext("2d");
 const statusEl = document.getElementById("status");
@@ -460,13 +647,65 @@ const bubble = document.getElementById("memeBubble");
 const labelEl = document.getElementById("memeLabel");
 const slotsEl = document.getElementById("slots");
 const filePicker = document.getElementById("filePicker");
+const photoPicker = document.getElementById("photoPicker");
+const photoBtn = document.getElementById("photoBtn");
+const snapBtn = document.getElementById("snapBtn");
+const flashEl = document.getElementById("flash");
 const meshToggle = document.getElementById("meshToggle");
 const debugToggle = document.getElementById("debugToggle");
+const soundToggle = document.getElementById("soundToggle");
+
+// ---------- remembered toggles ----------
+for (const [el, key] of [[meshToggle, "opt_mesh"], [debugToggle, "opt_debug"], [soundToggle, "opt_sound"]]) {
+  const saved = store.get(key);
+  if (saved !== null) el.checked = saved === "1";
+  el.addEventListener("change", () => store.set(key, el.checked ? "1" : "0"));
+}
+
+// ---------- input source: live camera, or a still photo ----------
+let mode = "camera";
+let stream = null;
+const srcEl = () => (mode === "photo" ? photo : video);
+const srcW = () => (mode === "photo" ? photo.naturalWidth : video.videoWidth);
+const srcH = () => (mode === "photo" ? photo.naturalHeight : video.videoHeight);
+const mirrored = () => mode === "camera";
+
+function usePhoto(url) {
+  photo.onload = () => {
+    mode = "photo";
+    wrapEl.classList.add("photo");
+    photoBtn.textContent = "📷 Back to camera";
+    resetTracking();
+  };
+  photo.src = url;
+}
+
+function useCamera() {
+  if (!stream) { photoPicker.click(); return; } // no camera available — pick another photo
+  mode = "camera";
+  wrapEl.classList.remove("photo");
+  photoBtn.textContent = "🖼 Try a photo";
+  resetTracking();
+}
+
+photoBtn.onclick = () => (mode === "photo" ? useCamera() : photoPicker.click());
+photoPicker.addEventListener("change", () => {
+  const file = photoPicker.files[0];
+  photoPicker.value = "";
+  if (file) usePhoto(URL.createObjectURL(file));
+});
 
 // ---------- custom images (localStorage overrides bundled defaults) ----------
+// "chilldog" was renamed to its real meme name — carry over a custom image if one was set
+const oldDog = store.get("meme_chilldog");
+if (oldDog) {
+  if (!store.get("meme_cookeddog")) store.set("meme_cookeddog", oldDog);
+  store.del("meme_chilldog");
+}
+
 const customImages = {};
 for (const e of EXPRESSIONS) {
-  const saved = localStorage.getItem("meme_" + e.id);
+  const saved = store.get("meme_" + e.id);
   if (saved) customImages[e.id] = saved;
 }
 const imageFor = id => customImages[id] || DEFAULT_IMAGES[id] || null;
@@ -479,9 +718,7 @@ filePicker.addEventListener("change", () => {
   const reader = new FileReader();
   reader.onload = () => {
     customImages[pickingFor] = reader.result;
-    try {
-      localStorage.setItem("meme_" + pickingFor, reader.result);
-    } catch {
+    if (!store.set("meme_" + pickingFor, reader.result)) {
       alert("Image too large to save between sessions — it will still work until you reload.");
     }
     renderSlots();
@@ -495,24 +732,32 @@ function renderSlots() {
     const div = document.createElement("div");
     div.className = "slot";
     div.id = "slot_" + e.id;
+    div.title = "Tap to preview";
     const img = imageFor(e.id);
     div.innerHTML = `
-      <div class="thumb">${img ? `<img src="${img}">` : e.emoji}</div>
+      <div class="thumb">${img ? `<img src="${img}" alt="">` : e.emoji}</div>
       <div class="info">
         <div class="name">${e.name}</div>
+        <div class="meme">${e.meme}</div>
         <div class="trigger">${e.trigger}</div>
       </div>
       <button data-act="pick" title="Use your own image/GIF">📁</button>
       ${customImages[e.id] ? '<button data-act="reset" title="Back to default">✕</button>' : ""}
     `;
-    div.querySelector('[data-act="pick"]').onclick = () => {
+    // a missing image file falls back to the emoji
+    const thumbImg = div.querySelector(".thumb img");
+    if (thumbImg) thumbImg.onerror = () => (thumbImg.parentElement.textContent = e.emoji);
+    div.onclick = () => previewMeme(e);
+    div.querySelector('[data-act="pick"]').onclick = ev => {
+      ev.stopPropagation();
       pickingFor = e.id;
       filePicker.click();
     };
     const resetBtn = div.querySelector('[data-act="reset"]');
-    if (resetBtn) resetBtn.onclick = () => {
+    if (resetBtn) resetBtn.onclick = ev => {
+      ev.stopPropagation();
       delete customImages[e.id];
-      localStorage.removeItem("meme_" + e.id);
+      store.del("meme_" + e.id);
       renderSlots();
     };
     slotsEl.appendChild(div);
@@ -520,22 +765,65 @@ function renderSlots() {
 }
 renderSlots();
 
+// ---------- vine boom (synthesized, so it works offline with no sound file) ----------
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function boom() {
+  if (!soundToggle.checked) return;
+  const ac = ensureAudio();
+  if (!ac || ac.state !== "running") return;
+  const t = ac.currentTime;
+  const out = ac.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(0.8, t + 0.012);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  out.connect(ac.destination);
+  for (const [type, f0, vol] of [["sine", 140, 1], ["triangle", 280, 0.35]]) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.3, t + 0.7);
+    g.gain.value = vol;
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.95);
+  }
+}
+
+soundToggle.addEventListener("change", () => { if (soundToggle.checked) { ensureAudio(); boom(); } });
+// browsers only allow audio after a user gesture — unlock on the first tap if sound was left on
+document.addEventListener("pointerdown", () => { if (soundToggle.checked) ensureAudio(); }, { once: true });
+
 // ---------- meme popup state (hysteresis so it doesn't flicker) ----------
 const MIN_SHOW_MS = 700;
 let current = null;
 let currentSince = 0;
 let candidate = null;
 let candidateFrames = 0;
+let previewTimer = 0;
+let lastFrameAt = -Infinity; // when the tracking loop last processed a frame
 
 function showMeme(expr) {
   const img = imageFor(expr.id);
   bubble.innerHTML = img
-    ? `<img src="${img}">`
+    ? `<img src="${img}" alt="">`
     : `<div class="emoji">${expr.emoji}</div>`;
+  const popImg = bubble.querySelector("img");
+  if (popImg) popImg.onerror = () => (bubble.innerHTML = `<div class="emoji">${expr.emoji}</div>`);
   labelEl.textContent = expr.name;
   popup.classList.add("visible");
   document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
   document.getElementById("slot_" + expr.id)?.classList.add("active");
+  boom();
 }
 
 function hideMeme() {
@@ -543,10 +831,32 @@ function hideMeme() {
   document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
 }
 
+// tap a slot: show that meme for a moment (centered if no face is tracked)
+function previewMeme(expr) {
+  if (!popup.classList.contains("visible")) {
+    popup.style.left = "50%";
+    popup.style.top = "60%";
+  }
+  showMeme(expr);
+  current = expr.id;
+  currentSince = performance.now() + 1000; // hold it a bit longer than a normal match
+  candidate = null;
+  candidateFrames = 0;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    // only needed when no frames are being tracked (no camera yet) — otherwise
+    // the normal "nothing detected" logic hides it
+    if (current === expr.id && performance.now() - lastFrameAt > 500) { current = null; hideMeme(); }
+  }, 1800);
+}
+
 function updateExpression(context) {
   let best = null, bestRatio = 1;
   for (const e of EXPRESSIONS) {
-    const ratio = e.score(context) / e.threshold;
+    // small bonus for whatever is showing / building up, so two memes with
+    // near-equal scores don't trade places every frame (then neither ever wins)
+    const sticky = e.id === current || e.id === candidate ? 1.15 : 1;
+    const ratio = e.score(context) / e.threshold * sticky;
     if (ratio > bestRatio) { bestRatio = ratio; best = e; }
   }
   const now = performance.now();
@@ -609,6 +919,13 @@ function updateTracks(hands) {
   if (trackB.length > HIST) trackB.shift();
 }
 
+function resetTracking() {
+  trackA = []; trackB = [];
+  lastFace = null;
+  current = null; candidate = null; candidateFrames = 0;
+  hideMeme();
+}
+
 // ---------- drawing ----------
 function drawPoints(points, color, size) {
   ctx.fillStyle = color;
@@ -617,7 +934,7 @@ function drawPoints(points, color, size) {
   }
 }
 
-// ---------- popup positioning (video is mirrored, so flip x) ----------
+// ---------- popup positioning (camera is mirrored, so flip x) ----------
 function positionPopup(faceLm, hands) {
   const pts = faceLm || (hands && hands.landmarks.flat());
   if (!pts) return;
@@ -627,11 +944,98 @@ function positionPopup(faceLm, hands) {
     if (p.x > maxX) maxX = p.x;
     if (p.y < minY) minY = p.y;
   }
-  const wrap = video.getBoundingClientRect();
+  const wrap = wrapEl.getBoundingClientRect();
   const midX = (minX + maxX) / 2;
-  popup.style.left = (1 - midX) * wrap.width + "px";
-  popup.style.top = Math.max(minY * wrap.height - 8, 8) + "px";
+  let left = (mirrored() ? 1 - midX : midX) * wrap.width;
+  let top = minY * wrap.height - 8; // popup is anchored by its bottom-center
+  // keep the whole popup inside the frame — when the face is near the top
+  // there's no room above it, so let it overlap the face instead of vanishing
+  const pw = popup.offsetWidth, ph = popup.offsetHeight;
+  if (pw) left = Math.min(Math.max(left, pw / 2 + 4), wrap.width - pw / 2 - 4);
+  if (ph) top = Math.min(Math.max(top, ph + 4), wrap.height - 4);
+  popup.style.left = left + "px";
+  popup.style.top = top + "px";
 }
+
+// ---------- snapshot: camera frame + meme popup → PNG download ----------
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  if (g.roundRect) g.roundRect(x, y, w, h, r);
+  else g.rect(x, y, w, h);
+}
+
+function snapshot() {
+  const w = srcW(), h = srcH();
+  if (!w || !h) return;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  if (mirrored()) { g.translate(w, 0); g.scale(-1, 1); }
+  g.drawImage(srcEl(), 0, 0, w, h);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+
+  if (popup.classList.contains("visible")) {
+    const wrap = wrapEl.getBoundingClientRect();
+    const k = w / wrap.width; // screen px → photo px
+    const rel = el => {
+      const r = el.getBoundingClientRect();
+      return { x: (r.left - wrap.left) * k, y: (r.top - wrap.top) * k, w: r.width * k, h: r.height * k };
+    };
+    const bb = rel(bubble);
+    g.fillStyle = "rgba(255,255,255,.95)";
+    roundRect(g, bb.x, bb.y, bb.w, bb.h, 18 * k);
+    g.fill();
+    const img = bubble.querySelector("img");
+    if (img) {
+      const ib = rel(img);
+      g.save();
+      roundRect(g, ib.x, ib.y, ib.w, ib.h, 10 * k);
+      g.clip();
+      g.drawImage(img, ib.x, ib.y, ib.w, ib.h);
+      g.restore();
+    } else {
+      const eb = rel(bubble.querySelector(".emoji"));
+      g.font = `${eb.h * 0.9}px sans-serif`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(bubble.textContent, eb.x + eb.w / 2, eb.y + eb.h / 2);
+    }
+    const lb = rel(labelEl);
+    g.fillStyle = getComputedStyle(labelEl).backgroundColor;
+    roundRect(g, lb.x, lb.y, lb.w, lb.h, lb.h / 2);
+    g.fill();
+    const fontPx = parseFloat(getComputedStyle(labelEl).fontSize) * k;
+    g.font = `800 ${fontPx}px -apple-system, "Segoe UI", Roboto, sans-serif`;
+    g.fillStyle = "#fff";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    if ("letterSpacing" in g) g.letterSpacing = `${2 * k}px`;
+    g.fillText(labelEl.textContent, lb.x + lb.w / 2, lb.y + lb.h / 2);
+  }
+
+  try {
+    c.toBlob(blob => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `meme-${Date.now()}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    }, "image/png");
+  } catch (err) {
+    // opened straight from disk (file://): the browser blocks reading the meme images back
+    alert("Snapshots need the page opened with start.command / start.bat (a local server).");
+    console.error(err);
+    return;
+  }
+  flashEl.style.transition = "none";
+  flashEl.style.opacity = "0.8";
+  requestAnimationFrame(() => {
+    flashEl.style.transition = "";
+    flashEl.style.opacity = "0";
+  });
+}
+snapBtn.onclick = snapshot;
 
 // ---------- main ----------
 let faceLandmarker, gestureRecognizer;
@@ -666,9 +1070,18 @@ async function init() {
     return;
   }
 
-  statusEl.textContent = "Requesting camera…";
+  requestAnimationFrame(loop);
+
+  // ?photo=memes/rock.webp opens a picture instead of the camera (handy for tuning)
+  const photoParam = new URLSearchParams(location.search).get("photo");
+  if (photoParam) {
+    usePhoto(photoParam);
+    statusEl.textContent = "Photo mode — tap 📷 Back to camera in the panel to go live.";
+  }
+
+  if (!photoParam) statusEl.textContent = "Requesting camera…";
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       // "ideal" (not fixed) so phones can serve a portrait stream instead of
       // being forced into an awkward rotated landscape frame
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
@@ -676,81 +1089,107 @@ async function init() {
     video.srcObject = stream;
     await new Promise(r => (video.onloadedmetadata = r));
   } catch (err) {
-    statusEl.textContent = "Camera blocked — allow camera access and reload.";
+    if (!photoParam) statusEl.textContent = "Camera blocked — allow camera access and reload, or tap 🖼 Try a photo.";
     console.error(err);
     return;
   }
 
-  overlay.width = video.videoWidth;
-  overlay.height = video.videoHeight;
-  statusEl.textContent = "Try: 🤲 bounce hands (6-7) · ✋✋ hold still (cinema) · 🤿 pinch nose · 🤙";
+  if (photoParam) return;
+  statusEl.textContent = "Try: ✋✋ hold still (cinema) · 🤨 raise one eyebrow · 🧠 tap your temple · 🤿 pinch nose";
   setTimeout(() => (statusEl.style.display = "none"), 7000);
-  requestAnimationFrame(loop);
 }
 
 let lastVideoTime = -1;
+let lastTs = 0;
+let lastFace = null; // { lm, t } — recent face, for when a hand covers it
 
 function loop() {
-  if (video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    const ts = performance.now();
-    const faceResult = faceLandmarker.detectForVideo(video, ts);
-    const handResult = gestureRecognizer.recognizeForVideo(video, ts);
-
-    ctx.clearRect(0, 0, overlay.width, overlay.height);
-
-    const faceLm = faceResult.faceLandmarks?.[0] || null;
-    let blend = null;
-    const shapes = faceResult.faceBlendshapes?.[0]?.categories;
-    if (shapes) {
-      blend = {};
-      for (const c of shapes) blend[c.categoryName] = c.score;
-    }
-
-    let hands = null;
-    if (handResult.landmarks?.length) {
-      hands = {
-        landmarks: handResult.landmarks,
-        names: handResult.gestures.map(g => g[0]?.categoryName || "None"),
-      };
-    }
-    updateTracks(hands);
-    const motionA = motionStats(trackA);
-    const motionB = motionStats(trackB);
-
-    if (meshToggle.checked) {
-      if (faceLm) drawPoints(faceLm, "rgba(124, 92, 255, 0.85)", 2);
-      if (hands) for (const lm of hands.landmarks) drawPoints(lm, "rgba(92, 255, 170, 0.9)", 5);
-    }
-
-    if (faceLm || hands) positionPopup(faceLm, hands);
-    updateExpression({ b: blend, hands, faceLm, motionA, motionB });
-
-    if (debugToggle.checked) {
-      debugEl.style.display = "block";
-      const lines = [];
-      if (hands) {
-        lines.push("hands: " + hands.names.join(", "));
-        lines.push(`motion A: travel ${motionA.travel.toFixed(2)} changes ${motionA.changes}`);
-        lines.push(`motion B: travel ${motionB.travel.toFixed(2)} changes ${motionB.changes}`);
-        if (faceLm) lines.push("nosePinch: " + nosePinch(hands, faceLm) +
-                               " pointSelf: " + pointAtSelf(hands, faceLm) +
-                               " paper: " + holdingPaper(hands, faceLm) +
-                               " shaka: " + shaka(hands));
-      }
-      if (faceLm) lines.push("pitchUp: " + pitchUp(faceLm).toFixed(2) +
-                             " · tongue: " + tongueDebug);
-      if (shapes) lines.push(...shapes
-        .filter(c => c.score > 0.2 && c.categoryName !== "_neutral")
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 8)
-        .map(c => `${c.categoryName}: ${c.score.toFixed(2)}`));
-      debugEl.innerHTML = lines.join("<br>") || "(neutral)";
-    } else {
-      debugEl.style.display = "none";
-    }
-  }
   requestAnimationFrame(loop);
+  const el = srcEl();
+  if (mode === "camera") {
+    if (video.readyState < 2 || video.currentTime === lastVideoTime) return;
+    lastVideoTime = video.currentTime;
+  } else if (!photo.complete || !photo.naturalWidth) {
+    return;
+  }
+  if (overlay.width !== srcW() || overlay.height !== srcH()) {
+    overlay.width = srcW();
+    overlay.height = srcH();
+  }
+
+  const ts = Math.max(performance.now(), lastTs + 1); // VIDEO mode needs increasing timestamps
+  lastTs = ts;
+  lastFrameAt = performance.now();
+  const faceResult = faceLandmarker.detectForVideo(el, ts);
+  const handResult = gestureRecognizer.recognizeForVideo(el, ts);
+
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  const liveFace = faceResult.faceLandmarks?.[0] || null;
+  // a hand over the face (facepalm, nose pinch) can make the face drop out for
+  // a few frames — keep using where it just was for the hand-vs-face checks
+  if (liveFace) lastFace = { lm: liveFace, t: ts };
+  const faceLm = liveFace || (lastFace && ts - lastFace.t < 600 ? lastFace.lm : null);
+
+  let blend = null;
+  const shapes = liveFace ? faceResult.faceBlendshapes?.[0]?.categories : null;
+  if (shapes) {
+    blend = {};
+    for (const c of shapes) blend[c.categoryName] = c.score;
+  }
+
+  let hands = null;
+  if (handResult.landmarks?.length) {
+    hands = {
+      landmarks: handResult.landmarks,
+      names: handResult.gestures.map(g => g[0]?.categoryName || "None"),
+    };
+  }
+  updateTracks(hands);
+  const motionA = motionStats(trackA);
+  const motionB = motionStats(trackB);
+  const tongue = liveFace ? tongueOut(liveFace, blend) : 0;
+
+  if (meshToggle.checked) {
+    if (liveFace) drawPoints(liveFace, "rgba(124, 92, 255, 0.85)", 2);
+    if (hands) for (const lm of hands.landmarks) drawPoints(lm, "rgba(92, 255, 170, 0.9)", 5);
+  }
+
+  updateExpression({ b: blend, hands, faceLm, tongue, motionA, motionB });
+  // after updateExpression, so a meme that just appeared already has a size to clamp
+  if (faceLm || hands) positionPopup(faceLm, hands);
+
+  if (debugToggle.checked) {
+    debugEl.style.display = "block";
+    const lines = [];
+    if (hands) {
+      lines.push("hands: " + hands.names.join(", "));
+      lines.push(`motion A: travel ${motionA.travel.toFixed(2)} changes ${motionA.changes}`);
+      lines.push(`motion B: travel ${motionB.travel.toFixed(2)} changes ${motionB.changes}`);
+      if (faceLm) {
+        lines.push("nosePinch: " + nosePinch(hands, faceLm) +
+                   " pointSelf: " + pointAtSelf(hands, faceLm) +
+                   " paper: " + holdingPaper(hands, faceLm) +
+                   " shaka: " + shaka(hands));
+        lines.push("temple: " + tapTemple(hands, faceLm) +
+                   " phone: " + phoneToEar(hands, faceLm) +
+                   " facepalm: " + palmOnFace(hands, faceLm));
+      }
+    }
+    if (faceLm) lines.push("pitchUp: " + pitchUp(faceLm).toFixed(2) +
+                           " · yaw: " + yaw(faceLm).toFixed(2) +
+                           " · tongue: " + tongueDebug);
+    if (blend) lines.push("oneBrow: " + oneBrowUp(faceLm, blend).toFixed(2) +
+                          " · sideEye: " + sideEye(blend).toFixed(2));
+    if (shapes) lines.push(...shapes
+      .filter(c => c.score > 0.2 && c.categoryName !== "_neutral")
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8)
+      .map(c => `${c.categoryName}: ${c.score.toFixed(2)}`));
+    debugEl.innerHTML = lines.join("<br>") || "(neutral)";
+  } else {
+    debugEl.style.display = "none";
+  }
 }
 
 init();
