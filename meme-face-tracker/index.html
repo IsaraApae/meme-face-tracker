@@ -214,7 +214,9 @@
   /* ---------- phones / narrow screens: stack video on top, panel below ---------- */
   @media (max-width: 820px) {
     body { flex-direction: column; }
-    #stage { padding: 8px; }
+    /* only as tall as the video: a stage stretched to fill the screen shrank
+       once the meme list filled in, and the whole panel jumped up the page */
+    #stage { padding: 8px; flex: none; }
     #videoWrap { border-radius: 12px; }
     #panel {
       width: 100%;
@@ -1040,7 +1042,29 @@ snapBtn.onclick = snapshot;
 // ---------- main ----------
 let faceLandmarker, gestureRecognizer;
 
+// resolves to null once the camera picture is live, or to the error if it isn't
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      // "ideal" (not fixed) so phones can serve a portrait stream instead of
+      // being forced into an awkward rotated landscape frame
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+    });
+    video.srcObject = stream;
+    await new Promise(r => (video.onloadedmetadata = r));
+    return null;
+  } catch (err) {
+    return err;
+  }
+}
+
 async function init() {
+  // ?photo=memes/rock.webp opens a picture instead of the camera (handy for tuning)
+  const photoParam = new URLSearchParams(location.search).get("photo");
+  if (photoParam) usePhoto(photoParam);
+  // ask for the camera now, while the models (~13 MB) download, instead of
+  // after them: the permission prompt and your picture show up right away
+  const cameraReady = startCamera();
   try {
     await loadVisionLib();
     const wasmBase = LOCAL_ASSETS ? "vendor/wasm" : CDN + "/wasm";
@@ -1067,30 +1091,21 @@ async function init() {
   } catch (err) {
     statusEl.textContent = "Failed to load models — check your internet connection.";
     console.error(err);
+    // nothing can be tracked, so don't leave the camera on
+    cameraReady.then(() => stream?.getTracks().forEach(t => t.stop()));
     return;
   }
 
   requestAnimationFrame(loop);
 
-  // ?photo=memes/rock.webp opens a picture instead of the camera (handy for tuning)
-  const photoParam = new URLSearchParams(location.search).get("photo");
-  if (photoParam) {
-    usePhoto(photoParam);
-    statusEl.textContent = "Photo mode — tap 📷 Back to camera in the panel to go live.";
-  }
+  statusEl.textContent = photoParam
+    ? "Photo mode — tap 📷 Back to camera in the panel to go live."
+    : "Requesting camera…"; // only stays up while the camera prompt is unanswered
 
-  if (!photoParam) statusEl.textContent = "Requesting camera…";
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      // "ideal" (not fixed) so phones can serve a portrait stream instead of
-      // being forced into an awkward rotated landscape frame
-      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
-    });
-    video.srcObject = stream;
-    await new Promise(r => (video.onloadedmetadata = r));
-  } catch (err) {
+  const cameraErr = await cameraReady;
+  if (cameraErr) {
     if (!photoParam) statusEl.textContent = "Camera blocked — allow camera access and reload, or tap 🖼 Try a photo.";
-    console.error(err);
+    console.error(cameraErr);
     return;
   }
 
