@@ -5,7 +5,7 @@
 Make the face or do the gesture, and the matching meme pops up over your head.
 It runs entirely in your browser: the camera never leaves your device.
 
-![The tracker on a photo of The Rock raising one eyebrow, with The Rock meme popped up over his head](docs/screenshot.jpg)
+<img src="docs/screenshot.jpg" width="300" alt="The tracker on a phone, on a photo of The Rock raising one eyebrow, with The Rock meme popped up over his head">
 
 To run it offline, download the [`meme-face-tracker`](meme-face-tracker) folder.
 See [its README](meme-face-tracker/README.md) for how to start it and the full list of memes and gestures.
