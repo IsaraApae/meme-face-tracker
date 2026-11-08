@@ -10,7 +10,7 @@ with no internet. Just copy the whole folder.
 
 | | |
 |---|---|
-| **Mac** | double-click `start.command` (first time: right-click → Open) |
+| **Mac** | double-click `start.command` (first time: right-click → Open; needs Python 3, which macOS offers to install if it's missing) |
 | **Windows** | double-click `start.bat` (needs Python, free at python.org) |
 
 Then allow camera access when the browser asks.
@@ -48,3 +48,9 @@ If the start script doesn't work:
 - **Vine boom 🔊** plays a boom every time a meme pops.
 - **🖼 Try a photo**: no camera? Run the tracker on a picture instead.
 - Turn on **Debug values** if a face or gesture is hard to trigger. It shows the live detection scores.
+
+## Credits
+
+The meme images belong to their respective owners. The face and hand tracking is
+[MediaPipe](https://ai.google.dev/edge/mediapipe) by Google, in the `vendor` folder,
+under the Apache License 2.0 (`vendor/LICENSE`).
