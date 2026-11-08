@@ -714,12 +714,32 @@ const srcW = () => (mode === "photo" ? photo.naturalWidth : video.videoWidth);
 const srcH = () => (mode === "photo" ? photo.naturalHeight : video.videoHeight);
 const mirrored = () => mode === "camera";
 
+// a problem with the current picture, shown in the status pill until the next one
+let problemShown = false;
+function showProblem(msg) {
+  statusEl.textContent = msg;
+  statusEl.style.display = "";
+  problemShown = true;
+}
+function clearProblem() {
+  if (problemShown) statusEl.style.display = "none";
+  problemShown = false;
+}
+
+let photoUrl = null; // object URL of the picked picture, released when it's replaced
+
 function usePhoto(url) {
   photo.onload = () => {
+    if (photoUrl && photoUrl !== url) URL.revokeObjectURL(photoUrl);
+    photoUrl = url.startsWith("blob:") ? url : null;
     mode = "photo";
     wrapEl.classList.add("photo");
     photoBtn.textContent = "📷 Back to camera";
     resetTracking();
+  };
+  photo.onerror = () => {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    showProblem("Couldn't open that picture. Try another one.");
   };
   photo.src = url;
 }
@@ -973,6 +993,8 @@ function resetTracking() {
   trackA = []; trackB = [];
   lastFace = null;
   current = null; candidate = null; candidateFrames = 0;
+  trackingFailed = false;
+  clearProblem();
   hideMeme();
 }
 
@@ -1146,7 +1168,7 @@ async function init() {
 
   requestAnimationFrame(loop);
 
-  statusEl.textContent = photoParam
+  if (!problemShown) statusEl.textContent = photoParam // keep "Couldn't open that picture"
     ? "Photo mode — tap 📷 Back to camera in the panel to go live."
     : "Requesting camera…"; // only stays up while the camera prompt is unanswered
 
@@ -1165,6 +1187,7 @@ async function init() {
 let lastVideoTime = -1;
 let lastTs = 0;
 let lastFace = null; // { lm, t } — recent face, for when a hand covers it
+let trackingFailed = false; // detection threw on this picture; reported once
 
 function loop() {
   requestAnimationFrame(loop);
@@ -1183,8 +1206,20 @@ function loop() {
   const ts = Math.max(performance.now(), lastTs + 1); // VIDEO mode needs increasing timestamps
   lastTs = ts;
   lastFrameAt = performance.now();
-  const faceResult = faceLandmarker.detectForVideo(el, ts);
-  const handResult = gestureRecognizer.recognizeForVideo(el, ts);
+  let faceResult, handResult;
+  try {
+    faceResult = faceLandmarker.detectForVideo(el, ts);
+    handResult = gestureRecognizer.recognizeForVideo(el, ts);
+  } catch (err) {
+    // e.g. a ?photo= picture from another site, which the browser won't let
+    // the page read: report it once instead of throwing on every frame
+    if (!trackingFailed) {
+      trackingFailed = true;
+      console.error(err);
+      if (mode === "photo") showProblem("Can't track this picture. Try another one.");
+    }
+    return;
+  }
 
   ctx.clearRect(0, 0, overlay.width, overlay.height);
 
