@@ -21,6 +21,12 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The tracker on a phone showing The Rock meme over a raised eyebrow, next to a row of meme thumbnails">
 <meta name="twitter:card" content="summary_large_image">
+
+<!-- start the big downloads (~12 MB of models) right away, instead of only
+     after the tracking engine has downloaded and compiled -->
+<link rel="modulepreload" href="vendor/vision_bundle.mjs">
+<link rel="preload" href="vendor/models/face_landmarker.task" as="fetch" crossorigin>
+<link rel="preload" href="vendor/models/gesture_recognizer.task" as="fetch" crossorigin>
 <style>
   :root {
     --bg: #0e0e14;
