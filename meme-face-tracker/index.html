@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Brainrot Meme Face Tracker</title>
 <style>
   :root {
@@ -13,6 +13,9 @@
     --muted: #8888a0;
   }
   * { box-sizing: border-box; }
+  /* pinch-zoom stays available, but a quick double-tap on a button or the
+     video doesn't zoom the page */
+  html, #panel, button, label, .slot { touch-action: manipulation; }
   body {
     margin: 0;
     background: var(--bg);
