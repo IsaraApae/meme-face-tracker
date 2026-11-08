@@ -1,0 +1,15 @@
+# Store text with LF line endings in the repo
+* text=auto
+
+# Launchers: each OS needs its own line endings, also in "Download ZIP"
+*.command text eol=lf
+*.bat     text eol=crlf
+
+# Vendored MediaPipe files: keep them byte-for-byte identical to upstream
+meme-face-tracker/vendor/** -text
+
+*.webp binary
+*.jpg  binary
+*.png  binary
+*.wasm binary
+*.task binary
