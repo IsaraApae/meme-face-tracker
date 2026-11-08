@@ -782,7 +782,7 @@ function renderSlots() {
     // button is what makes that reachable from the keyboard
     div.innerHTML = `
       <button type="button" class="preview">
-        <span class="thumb">${img ? `<img src="${img}" alt="">` : e.emoji}</span>
+        <span class="thumb">${img ? `<img src="${img}" alt="" loading="lazy" decoding="async">` : e.emoji}</span>
         <span class="info">
           <span class="name">${e.name}</span>
           <span class="meme">${e.meme}</span>
