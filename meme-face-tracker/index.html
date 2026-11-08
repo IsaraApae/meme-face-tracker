@@ -248,6 +248,7 @@
 <div id="stage">
   <div id="videoWrap">
     <video id="video" autoplay playsinline muted></video>
+    <!-- [html-validate-disable-next element-required-attributes -- src is set when a photo is picked] -->
     <img id="photo" alt="">
     <canvas id="overlay"></canvas>
     <div id="memePopup">
@@ -255,7 +256,7 @@
       <div id="memeLabel"></div>
     </div>
     <div id="status">Loading face + hand models…</div>
-    <button id="snapBtn" title="Save a snapshot with the meme">📸</button>
+    <button type="button" id="snapBtn" title="Save a snapshot with the meme">📸</button>
     <div id="flash"></div>
     <div id="debug"></div>
   </div>
@@ -270,7 +271,7 @@
     <label><input type="checkbox" id="debugToggle"> Debug values</label>
   </div>
   <div class="actions">
-    <button id="photoBtn" title="No camera? Test the tracker on a picture">🖼 Try a photo</button>
+    <button type="button" id="photoBtn" title="No camera? Test the tracker on a picture">🖼 Try a photo</button>
   </div>
   <div id="slots"></div>
 </aside>
@@ -743,8 +744,8 @@ function renderSlots() {
         <div class="meme">${e.meme}</div>
         <div class="trigger">${e.trigger}</div>
       </div>
-      <button data-act="pick" title="Use your own image/GIF">📁</button>
-      ${customImages[e.id] ? '<button data-act="reset" title="Back to default">✕</button>' : ""}
+      <button type="button" data-act="pick" title="Use your own image/GIF">📁</button>
+      ${customImages[e.id] ? '<button type="button" data-act="reset" title="Back to default">✕</button>' : ""}
     `;
     // a missing image file falls back to the emoji
     const thumbImg = div.querySelector(".thumb img");

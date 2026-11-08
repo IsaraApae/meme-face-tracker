@@ -1,0 +1,24 @@
+# Validates the page on every push to main and on every pull request
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate HTML
+        run: npx --yes html-validate@11.19.0 meme-face-tracker/index.html
+      - name: Check the script, meme images, file links and launchers
+        run: node .github/scripts/check-site.mjs
