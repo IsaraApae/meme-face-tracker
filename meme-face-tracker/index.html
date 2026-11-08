@@ -2,17 +2,37 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Brainrot Meme Face Tracker</title>
+<meta name="description" content="Make the face or do the gesture and the matching meme pops up over your head. 17 memes, tracked live in your browser with MediaPipe. The camera never leaves your device.">
+<link rel="canonical" href="https://isaraapae.github.io/meme-face-tracker/">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+<meta name="theme-color" content="#0e0e14">
+<meta name="color-scheme" content="dark">
+
+<!-- link previews (LINE, Discord, X, Facebook, ...) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Brainrot Meme Face Tracker">
+<meta property="og:title" content="Brainrot Meme Face Tracker">
+<meta property="og:description" content="Make the face or do the gesture and the matching meme pops up over your head. Runs in your browser; the camera never leaves your device.">
+<meta property="og:url" content="https://isaraapae.github.io/meme-face-tracker/">
+<meta property="og:image" content="https://isaraapae.github.io/meme-face-tracker/og-image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The tracker on a phone showing The Rock meme over a raised eyebrow, next to a row of meme thumbnails">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   :root {
     --bg: #0e0e14;
     --panel: #1a1a24;
     --accent: #7c5cff;
     --text: #f0f0f5;
-    --muted: #8888a0;
+    --muted: #9090a8; /* ≥4.5:1 on the meme rows, even the highlighted one */
   }
   * { box-sizing: border-box; }
+  /* pinch-zoom stays available, but a quick double-tap on a button or the
+     video doesn't zoom the page */
+  html, #panel, button, label, .slot { touch-action: manipulation; }
   body {
     margin: 0;
     background: var(--bg);
@@ -37,6 +57,13 @@
     overflow: hidden;
     background: #000;
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  }
+  /* until the camera picture (or a photo) arrives, hold the box at a typical
+     camera shape so the page doesn't jump when it does; the script sets
+     --cam-ar to the shape this device's camera had last time */
+  #videoWrap:not(.ready) { aspect-ratio: var(--cam-ar, 16 / 9); }
+  @media (orientation: portrait) {
+    #videoWrap:not(.ready) { aspect-ratio: var(--cam-ar, 3 / 4); }
   }
   video, #overlay, #photo {
     display: block;
@@ -183,6 +210,21 @@
     cursor: pointer;
   }
   .slot.active { border-color: var(--accent); background: #2c2440; }
+  /* the row's main area is a button, so it can be reached and used from the keyboard */
+  .slot .preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
   .slot .thumb {
     width: 52px;
     height: 52px;
@@ -197,10 +239,11 @@
   }
   .slot .thumb img { width: 100%; height: 100%; object-fit: cover; }
   .slot .info { flex: 1; min-width: 0; }
+  .slot .info, .slot .info > span { display: block; }
   .slot .info .name { font-weight: 700; font-size: 13px; }
-  .slot .info .meme { color: #b8a8ff; font-size: 11px; font-style: italic; }
-  .slot .info .trigger { color: var(--muted); font-size: 11px; }
-  .slot button {
+  .slot .info .meme { color: #b8a8ff; font-size: 12px; font-style: italic; }
+  .slot .info .trigger { color: var(--muted); font-size: 12px; }
+  .slot .act {
     background: #33334a;
     color: var(--text);
     border: 0;
@@ -209,7 +252,7 @@
     cursor: pointer;
     font-size: 12px;
   }
-  .slot button:hover { background: var(--accent); }
+  .slot .act:hover { background: var(--accent); }
 
   /* ---------- phones / narrow screens: stack video on top, panel below ---------- */
   @media (max-width: 820px) {
@@ -230,36 +273,36 @@
     #status { font-size: 11px; padding: 5px 12px; white-space: normal; text-align: center; max-width: 80%; }
     /* bigger tap targets on touch screens */
     .slot { padding: 10px; }
-    .slot button { padding: 9px 12px; font-size: 15px; }
+    .slot .act { padding: 9px 12px; font-size: 15px; }
     .toggles { font-size: 15px; gap: 10px 20px; }
     .actions button { padding: 11px; font-size: 15px; }
-    h1 { font-size: 20px; }
   }
 
   /* avoid sticky :hover staying highlighted after a tap on touch devices */
   @media (hover: none) {
-    .slot button:hover, .actions button:hover, #snapBtn:hover { background: #33334a; }
-    .slot button:active, .actions button:active, #snapBtn:active { background: var(--accent); }
+    .slot .act:hover, .actions button:hover, #snapBtn:hover { background: #33334a; }
+    .slot .act:active, .actions button:active, #snapBtn:active { background: var(--accent); }
   }
 </style>
 </head>
 <body>
 
-<div id="stage">
+<main id="stage">
   <div id="videoWrap">
     <video id="video" autoplay playsinline muted></video>
+    <!-- [html-validate-disable-next element-required-attributes -- src is set when a photo is picked] -->
     <img id="photo" alt="">
     <canvas id="overlay"></canvas>
     <div id="memePopup">
       <div class="bubble" id="memeBubble"><div class="emoji">😐</div></div>
       <div id="memeLabel"></div>
     </div>
-    <div id="status">Loading face + hand models…</div>
-    <button id="snapBtn" title="Save a snapshot with the meme">📸</button>
+    <div id="status" role="status">Loading face + hand models…</div>
+    <button type="button" id="snapBtn" title="Save a snapshot with the meme" aria-label="Save a snapshot with the meme">📸</button>
     <div id="flash"></div>
     <div id="debug"></div>
   </div>
-</div>
+</main>
 
 <aside id="panel">
   <h1>🧠 Brainrot Meme Tracker</h1>
@@ -270,7 +313,7 @@
     <label><input type="checkbox" id="debugToggle"> Debug values</label>
   </div>
   <div class="actions">
-    <button id="photoBtn" title="No camera? Test the tracker on a picture">🖼 Try a photo</button>
+    <button type="button" id="photoBtn" title="No camera? Test the tracker on a picture">🖼 Try a photo</button>
   </div>
   <div id="slots"></div>
 </aside>
@@ -672,12 +715,42 @@ const srcW = () => (mode === "photo" ? photo.naturalWidth : video.videoWidth);
 const srcH = () => (mode === "photo" ? photo.naturalHeight : video.videoHeight);
 const mirrored = () => mode === "camera";
 
+// remember the camera's shape (per orientation) so next time the box is
+// already the right size before the picture arrives
+const camShapeKey = () => (matchMedia("(orientation: portrait)").matches ? "cam_ar_portrait" : "cam_ar_landscape");
+const savedShape = store.get(camShapeKey());
+if (/^\d+ \/ \d+$/.test(savedShape || "")) wrapEl.style.setProperty("--cam-ar", savedShape);
+function cameraReady() {
+  if (video.videoWidth && video.videoHeight) store.set(camShapeKey(), `${video.videoWidth} / ${video.videoHeight}`);
+  wrapEl.classList.add("ready");
+}
+
+// a problem with the current picture, shown in the status pill until the next one
+let problemShown = false;
+function showProblem(msg) {
+  statusEl.textContent = msg;
+  statusEl.style.display = "";
+  problemShown = true;
+}
+function clearProblem() {
+  if (problemShown) statusEl.style.display = "none";
+  problemShown = false;
+}
+
+let photoUrl = null; // object URL of the picked picture, released when it's replaced
+
 function usePhoto(url) {
   photo.onload = () => {
+    if (photoUrl && photoUrl !== url) URL.revokeObjectURL(photoUrl);
+    photoUrl = url.startsWith("blob:") ? url : null;
     mode = "photo";
-    wrapEl.classList.add("photo");
+    wrapEl.classList.add("photo", "ready");
     photoBtn.textContent = "📷 Back to camera";
     resetTracking();
+  };
+  photo.onerror = () => {
+    if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    showProblem("Couldn't open that picture. Try another one.");
   };
   photo.src = url;
 }
@@ -736,15 +809,21 @@ function renderSlots() {
     div.id = "slot_" + e.id;
     div.title = "Tap to preview";
     const img = imageFor(e.id);
+    // clicks anywhere on the row preview (div.onclick below); the .preview
+    // button is what makes that reachable from the keyboard
     div.innerHTML = `
-      <div class="thumb">${img ? `<img src="${img}" alt="">` : e.emoji}</div>
-      <div class="info">
-        <div class="name">${e.name}</div>
-        <div class="meme">${e.meme}</div>
-        <div class="trigger">${e.trigger}</div>
-      </div>
-      <button data-act="pick" title="Use your own image/GIF">📁</button>
-      ${customImages[e.id] ? '<button data-act="reset" title="Back to default">✕</button>' : ""}
+      <button type="button" class="preview">
+        <span class="thumb">${img ? `<img src="${img}" alt="" loading="lazy" decoding="async">` : e.emoji}</span>
+        <span class="info">
+          <span class="name">${e.name}</span>
+          <span class="meme">${e.meme}</span>
+          <span class="trigger">${e.trigger}</span>
+        </span>
+      </button>
+      <button type="button" class="act" data-act="pick" title="Use your own image/GIF"
+              aria-label="Use your own image or GIF for ${e.name}">📁</button>
+      ${customImages[e.id] ? `<button type="button" class="act" data-act="reset" title="Back to default"
+              aria-label="Back to the default image for ${e.name}">✕</button>` : ""}
     `;
     // a missing image file falls back to the emoji
     const thumbImg = div.querySelector(".thumb img");
@@ -925,6 +1004,8 @@ function resetTracking() {
   trackA = []; trackB = [];
   lastFace = null;
   current = null; candidate = null; candidateFrames = 0;
+  trackingFailed = false;
+  clearProblem();
   hideMeme();
 }
 
@@ -1052,6 +1133,7 @@ async function startCamera() {
     });
     video.srcObject = stream;
     await new Promise(r => (video.onloadedmetadata = r));
+    cameraReady();
     return null;
   } catch (err) {
     return err;
@@ -1098,7 +1180,7 @@ async function init() {
 
   requestAnimationFrame(loop);
 
-  statusEl.textContent = photoParam
+  if (!problemShown) statusEl.textContent = photoParam // keep "Couldn't open that picture"
     ? "Photo mode — tap 📷 Back to camera in the panel to go live."
     : "Requesting camera…"; // only stays up while the camera prompt is unanswered
 
@@ -1117,6 +1199,7 @@ async function init() {
 let lastVideoTime = -1;
 let lastTs = 0;
 let lastFace = null; // { lm, t } — recent face, for when a hand covers it
+let trackingFailed = false; // detection threw on this picture; reported once
 
 function loop() {
   requestAnimationFrame(loop);
@@ -1135,8 +1218,20 @@ function loop() {
   const ts = Math.max(performance.now(), lastTs + 1); // VIDEO mode needs increasing timestamps
   lastTs = ts;
   lastFrameAt = performance.now();
-  const faceResult = faceLandmarker.detectForVideo(el, ts);
-  const handResult = gestureRecognizer.recognizeForVideo(el, ts);
+  let faceResult, handResult;
+  try {
+    faceResult = faceLandmarker.detectForVideo(el, ts);
+    handResult = gestureRecognizer.recognizeForVideo(el, ts);
+  } catch (err) {
+    // e.g. a ?photo= picture from another site, which the browser won't let
+    // the page read: report it once instead of throwing on every frame
+    if (!trackingFailed) {
+      trackingFailed = true;
+      console.error(err);
+      if (mode === "photo") showProblem("Can't track this picture. Try another one.");
+    }
+    return;
+  }
 
   ctx.clearRect(0, 0, overlay.width, overlay.height);
 
