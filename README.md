@@ -13,6 +13,7 @@ It runs entirely in your browser: the camera never leaves your device.
 - **📸 Snapshot**: save a picture of you with the meme
 - **📁 Your own memes**: swap in any image or GIF (kept in your browser)
 - **🖼 No camera?** Run the tracker on a photo instead
+- **Keyboard and screen-reader friendly**: Tab to any meme and press Enter to preview it
 - **Works offline**: the AI models are bundled, and nothing is uploaded anywhere
 
 ## What you need

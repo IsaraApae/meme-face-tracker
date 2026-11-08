@@ -43,7 +43,7 @@ If the start script doesn't work:
 
 ## Tips
 
-- **Tap a meme** in the sidebar to preview it. Tap 📁 to use your own image or GIF, and ✕ to go back to the default.
+- **Tap a meme** in the sidebar to preview it (or Tab to it and press Enter). Tap 📁 to use your own image or GIF, and ✕ to go back to the default.
 - **📸** (top-right of the video) saves a picture of you with the meme.
 - **Vine boom 🔊** plays a boom every time a meme pops.
 - **🖼 Try a photo**: no camera? Run the tracker on a picture instead.
