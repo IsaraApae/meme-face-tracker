@@ -64,6 +64,13 @@
     background: #000;
     box-shadow: 0 8px 40px rgba(0,0,0,.6);
   }
+  /* until the camera picture (or a photo) arrives, hold the box at a typical
+     camera shape so the page doesn't jump when it does; the script sets
+     --cam-ar to the shape this device's camera had last time */
+  #videoWrap:not(.ready) { aspect-ratio: var(--cam-ar, 16 / 9); }
+  @media (orientation: portrait) {
+    #videoWrap:not(.ready) { aspect-ratio: var(--cam-ar, 3 / 4); }
+  }
   video, #overlay, #photo {
     display: block;
     width: 100%;
@@ -714,6 +721,16 @@ const srcW = () => (mode === "photo" ? photo.naturalWidth : video.videoWidth);
 const srcH = () => (mode === "photo" ? photo.naturalHeight : video.videoHeight);
 const mirrored = () => mode === "camera";
 
+// remember the camera's shape (per orientation) so next time the box is
+// already the right size before the picture arrives
+const camShapeKey = () => (matchMedia("(orientation: portrait)").matches ? "cam_ar_portrait" : "cam_ar_landscape");
+const savedShape = store.get(camShapeKey());
+if (/^\d+ \/ \d+$/.test(savedShape || "")) wrapEl.style.setProperty("--cam-ar", savedShape);
+function cameraReady() {
+  if (video.videoWidth && video.videoHeight) store.set(camShapeKey(), `${video.videoWidth} / ${video.videoHeight}`);
+  wrapEl.classList.add("ready");
+}
+
 // a problem with the current picture, shown in the status pill until the next one
 let problemShown = false;
 function showProblem(msg) {
@@ -733,7 +750,7 @@ function usePhoto(url) {
     if (photoUrl && photoUrl !== url) URL.revokeObjectURL(photoUrl);
     photoUrl = url.startsWith("blob:") ? url : null;
     mode = "photo";
-    wrapEl.classList.add("photo");
+    wrapEl.classList.add("photo", "ready");
     photoBtn.textContent = "📷 Back to camera";
     resetTracking();
   };
@@ -1122,6 +1139,7 @@ async function startCamera() {
     });
     video.srcObject = stream;
     await new Promise(r => (video.onloadedmetadata = r));
+    cameraReady();
     return null;
   } catch (err) {
     return err;
