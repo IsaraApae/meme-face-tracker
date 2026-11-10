@@ -8,4 +8,9 @@ covers the code only. It does not cover:
   respective owners;
 - the MediaPipe library and models in meme-face-tracker/vendor/, which are
   Google's and licensed under the Apache License 2.0
-  (see meme-face-tracker/vendor/LICENSE).
+  (see meme-face-tracker/vendor/LICENSE);
+- the app icons in meme-face-tracker/icons/, which show the brain from
+  Google's Noto Emoji (https://github.com/googlefonts/noto-emoji, file
+  2D/svg/emoji_u1f9e0.svg, Copyright 2013 Google, Inc.), placed on a dark
+  background; the artwork is under the Apache License 2.0, the same
+  license text as meme-face-tracker/vendor/LICENSE.

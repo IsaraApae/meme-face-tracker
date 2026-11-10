@@ -45,7 +45,17 @@ for (const ref of refs) {
   if (ref && !existsSync(join(SITE, ref))) fail(`index.html refers to ${ref}, which doesn't exist`);
 }
 
-// 4. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
+// 4. the web app manifest is valid JSON and its icons exist
+try {
+  const manifest = JSON.parse(readFileSync(join(SITE, "manifest.webmanifest"), "utf8"));
+  for (const icon of manifest.icons ?? []) {
+    if (!existsSync(join(SITE, icon.src))) fail(`manifest.webmanifest refers to ${icon.src}, which doesn't exist`);
+  }
+} catch (err) {
+  fail(`manifest.webmanifest can't be read: ${err.message}`);
+}
+
+// 5. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
 if (process.platform !== "win32" && !(statSync(join(SITE, "start.command")).mode & 0o111)) {
   fail("start.command is not executable (git update-index --chmod=+x)");
 }
