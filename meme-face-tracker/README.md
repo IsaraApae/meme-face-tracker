@@ -13,7 +13,8 @@ with no internet. Just copy the whole folder.
 | **Mac** | double-click `start.command` (first time: right-click → Open; needs Python 3, which macOS offers to install if it's missing) |
 | **Windows** | double-click `start.bat` (needs Python, free at python.org) |
 
-Then allow camera access when the browser asks.
+Then allow camera access when the browser asks. If the camera doesn't start, the
+line at the top of the video says why: blocked, no camera found, or in use by another app.
 
 If the start script doesn't work:
 1. With internet: just double-click `index.html`. It loads the AI from the web instead of the `vendor` folder.
@@ -43,14 +44,17 @@ If the start script doesn't work:
 
 ## Tips
 
-- **Tap a meme** in the sidebar to preview it (or Tab to it and press Enter). Tap 📁 to use your own image or GIF, and ✕ to go back to the default.
+- **Tap a meme** in the sidebar to preview it (or Tab to it and press Enter). Tap 📁 to use your own image or GIF, and ✕ to go back to the default. A big picture is saved as a smaller copy; GIFs are kept as they are.
 - **📸** (top-right of the video) saves a picture of you with the meme.
 - **Vine boom 🔊** plays a boom every time a meme pops.
-- **🖼 Try a photo**: no camera? Run the tracker on a picture instead.
+- **🖼 Try a photo**: no camera? Run the tracker on a picture instead. The camera switches off while the photo is up; **📷 Back to camera** turns it on again.
 - Turn on **Debug values** if a face or gesture is hard to trigger. It shows the live detection scores.
+- The [online version](https://isaraapae.github.io/meme-face-tracker/) can be added to a phone's home screen, and opens with no connection after the first visit.
 
 ## Credits
 
 The meme images belong to their respective owners. The face and hand tracking is
 [MediaPipe](https://ai.google.dev/edge/mediapipe) by Google, in the `vendor` folder,
-under the Apache License 2.0 (`vendor/LICENSE`).
+under the Apache License 2.0 (`vendor/LICENSE`). The app icons in the `icons` folder
+show the brain from Google's [Noto Emoji](https://github.com/googlefonts/noto-emoji),
+under the same license.
