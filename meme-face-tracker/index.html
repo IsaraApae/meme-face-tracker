@@ -1270,6 +1270,23 @@ function stopCamera() {
   video.srcObject = null;
 }
 
+// The online version keeps a copy of itself (sw.js), so it also opens with no
+// connection after the first visit. Not on localhost: there the files are on
+// this computer already, and the worker would stay behind on that port and
+// answer for whatever is served there next.
+async function keepOfflineCopy() {
+  if (!navigator.serviceWorker || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return;
+  try {
+    await navigator.serviceWorker.register("sw.js");
+    const { active, scope } = await navigator.serviceWorker.ready;
+    // tell it what was loaded before it took over, so that one visit is enough
+    const loaded = performance.getEntriesByType("resource").map(r => r.name);
+    active.postMessage({ type: "keep", urls: [scope, ...loaded] });
+  } catch (err) {
+    console.warn("No offline copy this time:", err);
+  }
+}
+
 async function init() {
   // ?photo=memes/rock.webp opens a picture instead of the camera (handy for tuning)
   const photoParam = new URLSearchParams(location.search).get("photo");
@@ -1311,6 +1328,7 @@ async function init() {
   }
 
   requestAnimationFrame(loop);
+  keepOfflineCopy();
 
   if (photoParam) {
     if (!problemShown) statusEl.textContent = "Photo mode — tap 📷 Back to camera in the panel to go live.";

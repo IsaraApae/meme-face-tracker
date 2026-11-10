@@ -55,7 +55,21 @@ try {
   fail(`manifest.webmanifest can't be read: ${err.message}`);
 }
 
-// 5. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
+// 5. the service worker parses, and saves the vendor files under the same
+//    MediaPipe version the page uses (a new version must replace the saved copy)
+const swFile = join(SITE, "sw.js");
+try {
+  execFileSync(process.execPath, ["--check", swFile], { stdio: "pipe" });
+} catch (err) {
+  fail(`sw.js has a syntax error:\n${err.stderr}`);
+}
+const pageVersion = html.match(/tasks-vision@([\d.]+)/)?.[1];
+const swVersion = readFileSync(swFile, "utf8").match(/const MEDIAPIPE = "([^"]+)"/)?.[1];
+if (!pageVersion || pageVersion !== swVersion) {
+  fail(`MediaPipe is ${pageVersion} in index.html (CDN) but ${swVersion} in sw.js (MEDIAPIPE)`);
+}
+
+// 6. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
 if (process.platform !== "win32" && !(statSync(join(SITE, "start.command")).mode & 0o111)) {
   fail("start.command is not executable (git update-index --chmod=+x)");
 }
