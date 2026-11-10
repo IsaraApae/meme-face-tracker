@@ -46,6 +46,7 @@ Then open http://localhost:8765.
 Plain HTML, CSS and JavaScript in one file, [`index.html`](meme-face-tracker/index.html): no build step and nothing to install.
 
 - [MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker) (by Google) tracks 478 points on your face plus 52 expression scores, and both hands with their gesture, on every camera frame.
+- The models run in a [Web Worker](https://developer.mozilla.org/docs/Web/API/Web_Workers_API), off the page's own thread, so the page stays smooth while they work. Where a browser can't do that, they run on the page as before.
 - Each meme has a small scoring function over those values. The best match above its threshold, held for a few frames, pops up.
 - The library and models live in [`meme-face-tracker/vendor`](meme-face-tracker/vendor), so it works offline. If that folder is missing, it loads them from the web instead.
 
@@ -53,6 +54,7 @@ Plain HTML, CSS and JavaScript in one file, [`index.html`](meme-face-tracker/ind
 
 - Turn on **Debug values** in the sidebar to see the live scores while tuning a meme.
 - Add `?photo=memes/rock.webp` to the URL to run the tracker on a picture instead of the camera.
+- Add `?worker=0` to keep the tracking on the page instead of in the worker. The last line of **Debug values** says which of the two is in use.
 - The **Check** workflow runs on every push and pull request. It validates the HTML, checks that every meme has its image, and checks that the files in `vendor` are still the unmodified MediaPipe ones.
 - [`sw.js`](meme-face-tracker/sw.js) is the service worker behind the online version's offline copy. It isn't used on `localhost`, so it never gets in the way while developing.
 - Every push to `main` publishes the `meme-face-tracker` folder to GitHub Pages ([`pages.yml`](.github/workflows/pages.yml)).

@@ -343,21 +343,159 @@
 <input type="file" id="photoPicker" accept="image/*" hidden>
 
 <script type="module">
-// Load the vision library from the local vendor folder when possible (fully
-// offline); fall back to the CDN when the page is opened without the folder.
+// ---------- the tracker: MediaPipe's face and hand models ----------
+// Where the vision library and the models come from: the local vendor folder
+// when possible (fully offline), the web when the page is opened without it.
+// Full addresses, because the worker below has no folder of its own.
 const CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-let FaceLandmarker, GestureRecognizer, FilesetResolver;
-let LOCAL_ASSETS = true;
+const here = path => new URL(path, location.href).href;
+const SOURCES = [
+  {
+    lib: here("vendor/vision_bundle.mjs"),
+    wasm: here("vendor/wasm"),
+    faceModel: here("vendor/models/face_landmarker.task"),
+    gestureModel: here("vendor/models/gesture_recognizer.task"),
+  },
+  {
+    lib: CDN,
+    wasm: CDN + "/wasm",
+    faceModel: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    gestureModel: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+  },
+];
 
-async function loadVisionLib() {
-  let mod;
-  try {
-    mod = await import("./vendor/vision_bundle.mjs");
-  } catch {
-    mod = await import(CDN);
-    LOCAL_ASSETS = false;
+// Loads the models and returns track(image, ts): one camera frame or picture
+// in, plain numbers out. It runs in a Web Worker, so the page stays smooth
+// while the models think, or on the page itself where a worker can't do it.
+// The worker gets this function as text, so it must not use anything that is
+// defined outside it.
+async function createTracker(src) {
+  const { FaceLandmarker, GestureRecognizer, FilesetResolver } = await import(src.lib);
+  const resolver = await FilesetResolver.forVisionTasks(src.wasm);
+  const [face, gesture] = await Promise.all([
+    FaceLandmarker.createFromOptions(resolver, {
+      baseOptions: { modelAssetPath: src.faceModel, delegate: "GPU" },
+      outputFaceBlendshapes: true,
+      runningMode: "VIDEO",
+      numFaces: 1,
+    }),
+    GestureRecognizer.createFromOptions(resolver, {
+      baseOptions: { modelAssetPath: src.gestureModel, delegate: "GPU" },
+      runningMode: "VIDEO",
+      numHands: 2,
+    }),
+  ]);
+  return (image, ts) => {
+    const f = face.detectForVideo(image, ts);
+    const h = gesture.recognizeForVideo(image, ts);
+    const shapes = f.faceBlendshapes?.[0]?.categories;
+    return {
+      face: f.faceLandmarks?.[0] || null, // 478 points
+      blend: shapes ? Object.fromEntries(shapes.map(c => [c.categoryName, c.score])) : null,
+      hands: h.landmarks?.length
+        ? { landmarks: h.landmarks, names: h.gestures.map(g => g[0]?.categoryName || "None") }
+        : null,
+    };
+  };
+}
+
+// The worker's side: load on the first message, then track one frame per message.
+function trackerWorkerMain() {
+  let track;
+  let still = null; // a photo is sent once and tracked again from this copy
+  self.onmessage = async ({ data }) => {
+    try {
+      if (data.src) {
+        track = await createTracker(data.src);
+        // what it downloaded goes back to the page, for the offline copy
+        postMessage({ ready: true, loaded: performance.getEntriesByType("resource").map(r => r.name) });
+        return;
+      }
+      if (data.image) {
+        still?.close();
+        still = data.still ? data.image : null;
+      }
+      const image = data.image || still;
+      try {
+        postMessage({ result: track(image, data.ts) });
+      } finally {
+        if (image !== still) image.close();
+      }
+    } catch (err) {
+      postMessage({ error: String(err?.message || err) });
+    }
+  };
+}
+
+// Both ways of starting resolve to { track(source, ts, key), inWorker, loaded, stop }.
+// track() resolves to what createTracker's track returns.
+function trackerInWorker(src) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([`${createTracker}\n(${trackerWorkerMain})()`], { type: "text/javascript" }));
+    const worker = new Worker(url);
+    let started = false;
+    let waiting = null;  // the frame the worker is busy with
+    let stillKey = null; // which photo the worker holds a copy of
+    const fail = msg => {
+      const err = Object.assign(new Error(msg), { inWorker: true });
+      if (!started) {
+        worker.terminate();
+        URL.revokeObjectURL(url);
+        reject(err);
+      } else if (waiting) {
+        waiting.reject(err);
+        waiting = null;
+      }
+    };
+    worker.onerror = e => fail(e.message || "The tracking worker stopped.");
+    worker.onmessage = ({ data }) => {
+      if (data.error) {
+        fail(data.error);
+      } else if (data.ready) {
+        started = true;
+        URL.revokeObjectURL(url);
+        resolve({ track, src, inWorker: true, loaded: data.loaded, stop: () => worker.terminate() });
+      } else if (waiting) {
+        waiting.resolve(data.result);
+        waiting = null;
+      }
+    };
+    // key: the same key as last time means the same still picture
+    async function track(source, ts, key) {
+      const still = source instanceof HTMLImageElement;
+      if (still && key === stillKey) {
+        worker.postMessage({ ts });
+      } else {
+        const image = await createImageBitmap(source);
+        worker.postMessage({ image, ts, still }, [image]);
+        stillKey = still ? key : null;
+      }
+      return new Promise((res, rej) => (waiting = { resolve: res, reject: rej }));
+    }
+    worker.postMessage({ src });
+  });
+}
+
+async function trackerOnPage(src) {
+  const track = await createTracker(src);
+  return { track: async (source, ts) => track(source, ts), src, inWorker: false, loaded: [], stop() {} };
+}
+
+// A worker before the page, the vendor folder before the web.
+// ?worker=0 keeps the tracking on the page (handy for comparing the two).
+async function startTracker() {
+  const onPageOnly = new URLSearchParams(location.search).get("worker") === "0";
+  let lastErr;
+  for (const src of SOURCES) {
+    for (const start of onPageOnly ? [trackerOnPage] : [trackerInWorker, trackerOnPage]) {
+      try {
+        return await start(src);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
   }
-  ({ FaceLandmarker, GestureRecognizer, FilesetResolver } = mod);
+  throw lastErr;
 }
 
 // localStorage can throw (private mode, blocked site data) — never let it break the page
@@ -1103,6 +1241,7 @@ function resetTracking() {
   current = null; candidate = null; candidateFrames = 0;
   trackingFailed = false;
   photoFrames = 0;
+  trackGen++;
   clearProblem();
   hideMeme();
 }
@@ -1220,7 +1359,7 @@ function snapshot() {
 snapBtn.onclick = snapshot;
 
 // ---------- main ----------
-let faceLandmarker, gestureRecognizer;
+let tracker = null; // from startTracker(), set in init()
 
 // why the camera didn't start, in words short enough for the status pill
 function cameraProblem(err) {
@@ -1280,9 +1419,10 @@ async function keepOfflineCopy() {
   try {
     await navigator.serviceWorker.register("sw.js");
     const { active, scope } = await navigator.serviceWorker.ready;
-    // tell it what was loaded before it took over, so that one visit is enough
+    // tell it what was loaded before it took over (by the page, and by the
+    // tracking worker), so that one visit is enough
     const loaded = performance.getEntriesByType("resource").map(r => r.name);
-    active.postMessage({ type: "keep", urls: [scope, ...loaded] });
+    active.postMessage({ type: "keep", urls: [scope, ...loaded, ...tracker.loaded] });
   } catch (err) {
     console.warn("No offline copy this time:", err);
   }
@@ -1298,31 +1438,9 @@ async function init() {
   if (photoParam) usePhoto(photoParam);
   else cameraStart = startCamera();
   try {
-    await loadVisionLib();
-    const wasmBase = LOCAL_ASSETS ? "vendor/wasm" : CDN + "/wasm";
-    const faceModel = LOCAL_ASSETS
-      ? "vendor/models/face_landmarker.task"
-      : "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-    const gestureModel = LOCAL_ASSETS
-      ? "vendor/models/gesture_recognizer.task"
-      : "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task";
-    const resolver = await FilesetResolver.forVisionTasks(wasmBase);
-    [faceLandmarker, gestureRecognizer] = await Promise.all([
-      FaceLandmarker.createFromOptions(resolver, {
-        baseOptions: { modelAssetPath: faceModel, delegate: "GPU" },
-        outputFaceBlendshapes: true,
-        runningMode: "VIDEO",
-        numFaces: 1,
-      }),
-      GestureRecognizer.createFromOptions(resolver, {
-        baseOptions: { modelAssetPath: gestureModel, delegate: "GPU" },
-        runningMode: "VIDEO",
-        numHands: 2,
-      }),
-    ]);
+    tracker = await startTracker();
   } catch (err) {
-    statusEl.textContent = "Failed to load models — check your internet connection.";
-    console.error(err);
+    modelsFailed(err);
     // nothing can be tracked, so don't leave the camera on
     cameraStart?.then(stopCamera);
     return;
@@ -1359,12 +1477,22 @@ let lastFace = null; // { lm, t } — recent face, for when a hand covers it
 let trackingFailed = false; // detection threw on this picture; reported once
 const PHOTO_BURST = 48; // frames tracked at full speed on a new photo (HIST plus the longest hold)
 let photoFrames = 0;
+let busy = false;        // a frame is with the tracker; the next one waits for its answer
+let trackGen = 0;        // goes up when the picture source changes, so a late answer for the old one is dropped
+let everTracked = false; // the tracker has answered at least once
+
+function modelsFailed(err) {
+  statusEl.textContent = "Failed to load models — check your internet connection.";
+  statusEl.style.display = "";
+  console.error(err);
+}
 
 function loop() {
   requestAnimationFrame(loop);
-  const el = srcEl();
+  if (busy) return;
   if (mode === "camera") {
-    if (video.readyState < 2 || video.currentTime === lastVideoTime) return;
+    // paused: a camera that was just switched on has no picture to hand over yet
+    if (video.readyState < 2 || video.paused || video.currentTime === lastVideoTime) return;
     lastVideoTime = video.currentTime;
   } else {
     if (!photo.complete || !photo.naturalWidth) return;
@@ -1373,51 +1501,57 @@ function loop() {
     if (photoFrames >= PHOTO_BURST && performance.now() - lastFrameAt < 100) return;
     photoFrames++;
   }
-  if (overlay.width !== srcW() || overlay.height !== srcH()) {
-    overlay.width = srcW();
-    overlay.height = srcH();
-  }
 
   const ts = Math.max(performance.now(), lastTs + 1); // VIDEO mode needs increasing timestamps
   lastTs = ts;
   lastFrameAt = performance.now();
-  let faceResult, handResult;
-  try {
-    faceResult = faceLandmarker.detectForVideo(el, ts);
-    handResult = gestureRecognizer.recognizeForVideo(el, ts);
-  } catch (err) {
-    // e.g. a ?photo= picture from another site, which the browser won't let
-    // the page read: report it once instead of throwing on every frame
-    if (!trackingFailed) {
-      trackingFailed = true;
-      console.error(err);
-      if (mode === "photo") showProblem("Can't track this picture. Try another one.");
-    }
-    return;
-  }
+  const gen = trackGen;
+  busy = true;
+  tracker.track(srcEl(), ts, gen).then(
+    result => {
+      busy = false;
+      everTracked = true;
+      if (gen === trackGen) showResult(result, ts);
+    },
+    err => trackFailed(err, gen),
+  );
+}
 
+async function trackFailed(err, gen) {
+  // A worker that loaded but can't track: carry on with the tracking on the page.
+  if (err.inWorker && !everTracked) {
+    console.error(err);
+    tracker.stop();
+    try {
+      tracker = await trackerOnPage(tracker.src);
+    } catch (err2) {
+      modelsFailed(err2);
+      return; // busy stays set: there is nothing to track with
+    }
+  } else if (gen === trackGen && !trackingFailed) {
+    // e.g. a ?photo= picture from another site, which the browser won't let
+    // the page read: report it once instead of on every frame
+    trackingFailed = true;
+    console.error(err);
+    if (mode === "photo") showProblem("Can't track this picture. Try another one.");
+  }
+  busy = false;
+}
+
+// one answer from the tracker: draw the dots, pick the meme, place the popup
+function showResult({ face: liveFace, blend: liveBlend, hands }, ts) {
+  if (overlay.width !== srcW() || overlay.height !== srcH()) {
+    overlay.width = srcW();
+    overlay.height = srcH();
+  }
   ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-  const liveFace = faceResult.faceLandmarks?.[0] || null;
   // a hand over the face (facepalm, nose pinch) can make the face drop out for
   // a few frames — keep using where it just was for the hand-vs-face checks
   if (liveFace) lastFace = { lm: liveFace, t: ts };
   const faceLm = liveFace || (lastFace && ts - lastFace.t < 600 ? lastFace.lm : null);
+  const blend = liveFace ? liveBlend : null;
 
-  let blend = null;
-  const shapes = liveFace ? faceResult.faceBlendshapes?.[0]?.categories : null;
-  if (shapes) {
-    blend = {};
-    for (const c of shapes) blend[c.categoryName] = c.score;
-  }
-
-  let hands = null;
-  if (handResult.landmarks?.length) {
-    hands = {
-      landmarks: handResult.landmarks,
-      names: handResult.gestures.map(g => g[0]?.categoryName || "None"),
-    };
-  }
   updateTracks(hands);
   const motionA = motionStats(trackA);
   const motionB = motionStats(trackB);
@@ -1454,12 +1588,13 @@ function loop() {
                            " · tongue: " + tongueDebug);
     if (blend) lines.push("oneBrow: " + oneBrowUp(faceLm, blend).toFixed(2) +
                           " · sideEye: " + sideEye(blend).toFixed(2));
-    if (shapes) lines.push(...shapes
-      .filter(c => c.score > 0.2 && c.categoryName !== "_neutral")
-      .sort((a, b) => b.score - a.score)
+    if (blend) lines.push(...Object.entries(blend)
+      .filter(([name, score]) => score > 0.2 && name !== "_neutral")
+      .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
-      .map(c => `${c.categoryName}: ${c.score.toFixed(2)}`));
-    debugEl.innerHTML = lines.join("<br>") || "(neutral)";
+      .map(([name, score]) => `${name}: ${score.toFixed(2)}`));
+    debugEl.innerHTML = (lines.join("<br>") || "(neutral)") +
+      "<br>tracking " + (tracker.inWorker ? "in a worker" : "on the page");
   } else {
     debugEl.style.display = "none";
   }
