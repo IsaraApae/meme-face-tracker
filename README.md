@@ -13,8 +13,8 @@ It runs entirely in your browser: the camera never leaves your device.
 
 - **17 memes**, each set off by a face, a hand gesture, or both ([full list](meme-face-tracker/README.md#the-memes))
 - **📸 Snapshot**: save a picture of you with the meme
-- **📁 Your own memes**: swap in any image or GIF (kept in your browser)
-- **🖼 No camera?** Run the tracker on a photo instead
+- **📁 Your own memes**: swap in any image or GIF (kept in your browser; a big picture is stored as a smaller copy)
+- **🖼 No camera?** Run the tracker on a photo instead. The camera is switched off while a photo is up
 - **Keyboard and screen-reader friendly**: Tab to any meme and press Enter to preview it, and the meme that pops up is read out
 - **Works offline**: the AI models are bundled, and nothing is uploaded anywhere. The online version keeps a copy of itself too, so after one visit it opens with no connection
 - **Add to Home Screen**: on a phone it installs like an app, with its own icon
