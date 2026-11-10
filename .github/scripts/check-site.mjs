@@ -1,7 +1,8 @@
 // Sanity checks for the static site (run by .github/workflows/check.yml).
 // Usage: node .github/scripts/check-site.mjs
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -69,7 +70,28 @@ if (!pageVersion || pageVersion !== swVersion) {
   fail(`MediaPipe is ${pageVersion} in index.html (CDN) but ${swVersion} in sw.js (MEDIAPIPE)`);
 }
 
-// 6. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
+// 6. the vendored MediaPipe files are exactly the ones recorded in
+//    vendor/SHA256SUMS (unmodified copies of the published package and models)
+const VENDOR = join(SITE, "vendor");
+const OURS = new Set(["README.md", "LICENSE", "SHA256SUMS"]);
+const sums = new Map(readFileSync(join(VENDOR, "SHA256SUMS"), "utf8").trim().split(/\r?\n/).map(line => {
+  const [hash, file] = line.split(/\s+/);
+  return [file, hash];
+}));
+for (const [file, hash] of sums) {
+  const path = join(VENDOR, file);
+  if (!existsSync(path)) fail(`vendor/SHA256SUMS lists ${file}, which doesn't exist`);
+  else if (createHash("sha256").update(readFileSync(path)).digest("hex") !== hash) {
+    fail(`vendor/${file} doesn't match its checksum in vendor/SHA256SUMS`);
+  }
+}
+for (const file of readdirSync(VENDOR, { recursive: true }).map(f => f.replaceAll("\\", "/"))) {
+  if (statSync(join(VENDOR, file)).isFile() && !OURS.has(file) && !sums.has(file)) {
+    fail(`vendor/${file} has no checksum in vendor/SHA256SUMS`);
+  }
+}
+
+// 7. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
 if (process.platform !== "win32" && !(statSync(join(SITE, "start.command")).mode & 0o111)) {
   fail("start.command is not executable (git update-index --chmod=+x)");
 }
@@ -78,4 +100,4 @@ if (errors.length) {
   console.error(errors.map(e => "✗ " + e).join("\n"));
   process.exit(1);
 }
-console.log(`✓ script parses, ${ids.length} memes have images, ${refs.size} local references exist`);
+console.log(`✓ script parses, ${ids.length} memes have images, ${refs.size} local references exist, ${sums.size} vendor files match`);
