@@ -1123,6 +1123,25 @@ snapBtn.onclick = snapshot;
 // ---------- main ----------
 let faceLandmarker, gestureRecognizer;
 
+// why the camera didn't start, in words short enough for the status pill
+function cameraProblem(err) {
+  const orPhoto = ", or tap 🖼 Try a photo.";
+  // some in-app browsers, and pages not opened over https, have no camera at all
+  if (!navigator.mediaDevices?.getUserMedia) return "This browser can't use the camera here — try Chrome or Safari" + orPhoto;
+  switch (err?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Camera blocked — allow camera access and reload" + orPhoto;
+    case "NotFoundError":
+      return "No camera found — connect one and reload" + orPhoto;
+    case "NotReadableError":
+    case "AbortError":
+      return "The camera is busy — close other apps using it and reload" + orPhoto;
+    default:
+      return "Couldn't start the camera — reload" + orPhoto;
+  }
+}
+
 // resolves to null once the camera picture is live, or to the error if it isn't
 async function startCamera() {
   try {
@@ -1186,7 +1205,7 @@ async function init() {
 
   const cameraErr = await cameraReady;
   if (cameraErr) {
-    if (!photoParam) statusEl.textContent = "Camera blocked — allow camera access and reload, or tap 🖼 Try a photo.";
+    if (!photoParam) statusEl.textContent = cameraProblem(cameraErr);
     console.error(cameraErr);
     return;
   }
