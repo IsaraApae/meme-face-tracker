@@ -1,5 +1,7 @@
 # 🧠 Brainrot Meme Face Tracker
 
+[![Check](https://github.com/IsaraApae/meme-face-tracker/actions/workflows/check.yml/badge.svg)](https://github.com/IsaraApae/meme-face-tracker/actions/workflows/check.yml)
+
 ### ▶️ [Try it online](https://isaraapae.github.io/meme-face-tracker/)
 
 Make the face or do the gesture, and the matching meme pops up over your head.
@@ -13,14 +15,15 @@ It runs entirely in your browser: the camera never leaves your device.
 - **📸 Snapshot**: save a picture of you with the meme
 - **📁 Your own memes**: swap in any image or GIF (kept in your browser)
 - **🖼 No camera?** Run the tracker on a photo instead
-- **Keyboard and screen-reader friendly**: Tab to any meme and press Enter to preview it
-- **Works offline**: the AI models are bundled, and nothing is uploaded anywhere
+- **Keyboard and screen-reader friendly**: Tab to any meme and press Enter to preview it, and the meme that pops up is read out
+- **Works offline**: the AI models are bundled, and nothing is uploaded anywhere. The online version keeps a copy of itself too, so after one visit it opens with no connection
+- **Add to Home Screen**: on a phone it installs like an app, with its own icon
 
 ## What you need
 
 - A recent browser with a camera, on a computer or a phone
 - The page opened over `https://` or from `localhost`, since browsers only allow the camera there (the online version and the start scripts both do this)
-- About 12 MB of download the first time (the tracking models); after that it's cached
+- About 12 MB of download the first time (the tracking models); after that it's saved in your browser
 
 ## Run it offline
 
@@ -50,7 +53,8 @@ Plain HTML, CSS and JavaScript in one file, [`index.html`](meme-face-tracker/ind
 
 - Turn on **Debug values** in the sidebar to see the live scores while tuning a meme.
 - Add `?photo=memes/rock.webp` to the URL to run the tracker on a picture instead of the camera.
-- The **Check** workflow validates the HTML and checks that every meme has its image, on every push and pull request.
+- The **Check** workflow runs on every push and pull request. It validates the HTML, checks that every meme has its image, and checks that the files in `vendor` are still the unmodified MediaPipe ones.
+- [`sw.js`](meme-face-tracker/sw.js) is the service worker behind the online version's offline copy. It isn't used on `localhost`, so it never gets in the way while developing.
 - Every push to `main` publishes the `meme-face-tracker` folder to GitHub Pages ([`pages.yml`](.github/workflows/pages.yml)).
 - No environment variables or API keys are needed.
 
@@ -58,3 +62,4 @@ Plain HTML, CSS and JavaScript in one file, [`index.html`](meme-face-tracker/ind
 
 The code is [MIT](LICENSE). The meme images in `meme-face-tracker/memes` belong to their respective owners and aren't covered by that license.
 MediaPipe and its models are by Google, under the [Apache License 2.0](meme-face-tracker/vendor/LICENSE).
+The app icons show the brain from Google's [Noto Emoji](https://github.com/googlefonts/noto-emoji), under the same license. [NOTICE](NOTICE) has the details.
