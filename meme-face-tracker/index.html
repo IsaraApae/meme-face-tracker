@@ -710,6 +710,8 @@ for (const [el, key] of [[meshToggle, "opt_mesh"], [debugToggle, "opt_debug"], [
 // ---------- input source: live camera, or a still photo ----------
 let mode = "camera";
 let stream = null;
+let wantCamera = true;    // false while a photo is up: the camera stays off then
+let cameraFailed = false; // the last attempt to start the camera didn't work
 const srcEl = () => (mode === "photo" ? photo : video);
 const srcW = () => (mode === "photo" ? photo.naturalWidth : video.videoWidth);
 const srcH = () => (mode === "photo" ? photo.naturalHeight : video.videoHeight);
@@ -746,6 +748,9 @@ function usePhoto(url) {
     mode = "photo";
     wrapEl.classList.add("photo", "ready");
     photoBtn.textContent = "📷 Back to camera";
+    // nothing is watching the camera now, so switch it (and its light) off
+    wantCamera = false;
+    stopCamera();
     resetTracking();
   };
   photo.onerror = () => {
@@ -755,8 +760,18 @@ function usePhoto(url) {
   photo.src = url;
 }
 
-function useCamera() {
-  if (!stream) { photoPicker.click(); return; } // no camera available — pick another photo
+async function useCamera() {
+  if (cameraFailed) { photoPicker.click(); return; } // no camera available — pick another photo
+  // the photo stays up until the camera picture is live again
+  photoBtn.disabled = true;
+  const err = await startCamera();
+  photoBtn.disabled = false;
+  if (err) {
+    wantCamera = false;
+    showProblem(cameraProblem(err));
+    console.error(err);
+    return;
+  }
   mode = "camera";
   wrapEl.classList.remove("photo");
   photoBtn.textContent = "🖼 Try a photo";
@@ -1144,28 +1159,42 @@ function cameraProblem(err) {
 
 // resolves to null once the camera picture is live, or to the error if it isn't
 async function startCamera() {
+  wantCamera = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const s = await navigator.mediaDevices.getUserMedia({
       // "ideal" (not fixed) so phones can serve a portrait stream instead of
       // being forced into an awkward rotated landscape frame
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
     });
+    // a photo was picked while the permission prompt was up: leave the camera off
+    if (!wantCamera) { s.getTracks().forEach(t => t.stop()); return null; }
+    stream = s;
     video.srcObject = stream;
     await new Promise(r => (video.onloadedmetadata = r));
     cameraReady();
+    cameraFailed = false;
     return null;
   } catch (err) {
+    cameraFailed = true;
     return err;
   }
+}
+
+function stopCamera() {
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.srcObject = null;
 }
 
 async function init() {
   // ?photo=memes/rock.webp opens a picture instead of the camera (handy for tuning)
   const photoParam = new URLSearchParams(location.search).get("photo");
-  if (photoParam) usePhoto(photoParam);
   // ask for the camera now, while the models (~13 MB) download, instead of
-  // after them: the permission prompt and your picture show up right away
-  const cameraReady = startCamera();
+  // after them: the permission prompt and your picture show up right away.
+  // With ?photo= the camera stays off until "Back to camera" is tapped.
+  let cameraStart = null;
+  if (photoParam) usePhoto(photoParam);
+  else cameraStart = startCamera();
   try {
     await loadVisionLib();
     const wasmBase = LOCAL_ASSETS ? "vendor/wasm" : CDN + "/wasm";
@@ -1193,26 +1222,32 @@ async function init() {
     statusEl.textContent = "Failed to load models — check your internet connection.";
     console.error(err);
     // nothing can be tracked, so don't leave the camera on
-    cameraReady.then(() => stream?.getTracks().forEach(t => t.stop()));
+    cameraStart?.then(stopCamera);
     return;
   }
 
   requestAnimationFrame(loop);
 
-  if (!problemShown) statusEl.textContent = photoParam // keep "Couldn't open that picture"
-    ? "Photo mode — tap 📷 Back to camera in the panel to go live."
-    : "Requesting camera…"; // only stays up while the camera prompt is unanswered
-
-  const cameraErr = await cameraReady;
+  if (photoParam) {
+    if (!problemShown) statusEl.textContent = "Photo mode — tap 📷 Back to camera in the panel to go live.";
+    return;
+  }
+  // "Requesting camera…" only stays up while the camera prompt is unanswered
+  if (!problemShown) statusEl.textContent = "Requesting camera…"; // keep "Couldn't open that picture"
+  const cameraErr = await cameraStart;
+  if (!wantCamera) { // a photo was picked in the meantime
+    if (!problemShown) statusEl.style.display = "none";
+    return;
+  }
   if (cameraErr) {
-    if (!photoParam) statusEl.textContent = cameraProblem(cameraErr);
+    statusEl.textContent = cameraProblem(cameraErr);
     console.error(cameraErr);
     return;
   }
 
-  if (photoParam) return;
   statusEl.textContent = "Try: ✋✋ hold still (cinema) · 🤨 raise one eyebrow · 🧠 tap your temple · 🤿 pinch nose";
-  setTimeout(() => (statusEl.style.display = "none"), 7000);
+  problemShown = false;
+  setTimeout(() => { if (!problemShown) statusEl.style.display = "none"; }, 7000);
 }
 
 let lastVideoTime = -1;
