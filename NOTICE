@@ -1,0 +1,16 @@
+Brainrot Meme Face Tracker
+Copyright (c) 2026 IsaraApae
+
+The project's own code is under the MIT license (see LICENSE). That license
+covers the code only. It does not cover:
+
+- the meme images in meme-face-tracker/memes/, which belong to their
+  respective owners;
+- the MediaPipe library and models in meme-face-tracker/vendor/, which are
+  Google's and licensed under the Apache License 2.0
+  (see meme-face-tracker/vendor/LICENSE);
+- the app icons in meme-face-tracker/icons/, which show the brain from
+  Google's Noto Emoji (https://github.com/googlefonts/noto-emoji, file
+  2D/svg/emoji_u1f9e0.svg, Copyright 2013 Google, Inc.), placed on a dark
+  background; the artwork is under the Apache License 2.0, the same
+  license text as meme-face-tracker/vendor/LICENSE.

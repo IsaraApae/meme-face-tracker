@@ -7,6 +7,9 @@
 <meta name="description" content="Make the face or do the gesture and the matching meme pops up over your head. 17 memes, tracked live in your browser with MediaPipe. The camera never leaves your device.">
 <link rel="canonical" href="https://isaraapae.github.io/meme-face-tracker/">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+<!-- name and icon for "Add to Home Screen" -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="theme-color" content="#0e0e14">
 <meta name="color-scheme" content="dark">
 
@@ -278,6 +281,22 @@
     .actions button { padding: 11px; font-size: 15px; }
   }
 
+  /* read out by screen readers, not shown */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* for people who asked their device for less motion: no pop-in, no white flash */
+  @media (prefers-reduced-motion: reduce) {
+    #memePopup .bubble { animation: none; }
+    #flash { display: none; }
+  }
+
   /* avoid sticky :hover staying highlighted after a tap on touch devices */
   @media (hover: none) {
     .slot .act:hover, .actions button:hover, #snapBtn:hover { background: #33334a; }
@@ -302,6 +321,8 @@
     <div id="flash"></div>
     <div id="debug"></div>
   </div>
+  <!-- the name of the meme that just popped up, for screen readers -->
+  <div id="announce" class="sr-only" role="status"></div>
 </main>
 
 <aside id="panel">
@@ -690,6 +711,7 @@ const debugEl = document.getElementById("debug");
 const popup = document.getElementById("memePopup");
 const bubble = document.getElementById("memeBubble");
 const labelEl = document.getElementById("memeLabel");
+const announceEl = document.getElementById("announce");
 const slotsEl = document.getElementById("slots");
 const filePicker = document.getElementById("filePicker");
 const photoPicker = document.getElementById("photoPicker");
@@ -710,6 +732,8 @@ for (const [el, key] of [[meshToggle, "opt_mesh"], [debugToggle, "opt_debug"], [
 // ---------- input source: live camera, or a still photo ----------
 let mode = "camera";
 let stream = null;
+let wantCamera = true;    // false while a photo is up: the camera stays off then
+let cameraFailed = false; // the last attempt to start the camera didn't work
 const srcEl = () => (mode === "photo" ? photo : video);
 const srcW = () => (mode === "photo" ? photo.naturalWidth : video.videoWidth);
 const srcH = () => (mode === "photo" ? photo.naturalHeight : video.videoHeight);
@@ -746,6 +770,9 @@ function usePhoto(url) {
     mode = "photo";
     wrapEl.classList.add("photo", "ready");
     photoBtn.textContent = "📷 Back to camera";
+    // nothing is watching the camera now, so switch it (and its light) off
+    wantCamera = false;
+    stopCamera();
     resetTracking();
   };
   photo.onerror = () => {
@@ -755,11 +782,22 @@ function usePhoto(url) {
   photo.src = url;
 }
 
-function useCamera() {
-  if (!stream) { photoPicker.click(); return; } // no camera available — pick another photo
+async function useCamera() {
+  if (cameraFailed) { photoPicker.click(); return; } // no camera available — pick another photo
+  // the photo stays up until the camera picture is live again
+  photoBtn.disabled = true;
+  const err = await startCamera();
+  photoBtn.disabled = false;
+  if (err) {
+    wantCamera = false;
+    showProblem(cameraProblem(err));
+    console.error(err);
+    return;
+  }
   mode = "camera";
   wrapEl.classList.remove("photo");
   photoBtn.textContent = "🖼 Try a photo";
+  statusEl.style.display = "none"; // e.g. the "Photo mode" line of a ?photo= page
   resetTracking();
 }
 
@@ -785,21 +823,78 @@ for (const e of EXPRESSIONS) {
 }
 const imageFor = id => customImages[id] || DEFAULT_IMAGES[id] || null;
 
-let pickingFor = null;
-filePicker.addEventListener("change", () => {
-  const file = filePicker.files[0];
-  filePicker.value = "";
-  if (!file || !pickingFor) return;
+const KEEP_AS_IS = 200 * 1024; // files up to this size are stored untouched
+const CUSTOM_MAX = 512;        // longest side of a stored copy, same as the bundled memes
+
+const readAsDataURL = file => new Promise((resolve, reject) => {
   const reader = new FileReader();
-  reader.onload = () => {
-    customImages[pickingFor] = reader.result;
-    if (!store.set("meme_" + pickingFor, reader.result)) {
-      alert("Image too large to save between sessions — it will still work until you reload.");
-    }
-    renderSlots();
-  };
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
   reader.readAsDataURL(file);
 });
+
+// A phone photo is several MB, more than a page may keep in the browser, so
+// it was gone after a reload. Store a copy no bigger than the bundled memes
+// instead. GIFs are kept whole (a copy would stop moving), and so are small files.
+async function customImageUrl(file) {
+  if (file.type === "image/gif" || file.size <= KEEP_AS_IS) return readAsDataURL(file);
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const k = Math.min(1, CUSTOM_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k);
+    c.height = Math.round(img.naturalHeight * k);
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0, c.width, c.height);
+    const webp = c.toDataURL("image/webp", 0.85);
+    if (webp.startsWith("data:image/webp")) return webp;
+    // no WebP encoder (Safari): JPEG, or PNG when the picture has see-through parts
+    const px = g.getImageData(0, 0, c.width, c.height).data;
+    let opaque = true;
+    for (let i = 3; i < px.length && opaque; i += 4) opaque = px[i] === 255;
+    return c.toDataURL(opaque ? "image/jpeg" : "image/png", 0.85);
+  } catch {
+    return readAsDataURL(file); // a format the browser can't redraw: keep the file as it is
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+let pickingFor = null;
+filePicker.addEventListener("change", async () => {
+  const file = filePicker.files[0];
+  const id = pickingFor;
+  filePicker.value = "";
+  if (!file || !id) return;
+  let url;
+  try {
+    url = await customImageUrl(file);
+  } catch (err) {
+    alert("Couldn't read that image. Try another one.");
+    console.error(err);
+    return;
+  }
+  customImages[id] = url;
+  if (!store.set("meme_" + id, url)) {
+    alert("Image too large to save between sessions — it will still work until you reload.");
+  }
+  renderSlots();
+});
+
+// A meme picture, built as an element instead of HTML text: a custom image
+// comes out of localStorage, which every page on this site's address can
+// write to. A missing or broken image calls onMissing (falls back to the emoji).
+function memeImg(src, onMissing, lazy = false) {
+  const img = new Image();
+  img.alt = "";
+  if (lazy) { img.loading = "lazy"; img.decoding = "async"; }
+  img.onerror = onMissing;
+  img.src = src;
+  return img;
+}
 
 function renderSlots() {
   slotsEl.innerHTML = "";
@@ -808,12 +903,11 @@ function renderSlots() {
     div.className = "slot";
     div.id = "slot_" + e.id;
     div.title = "Tap to preview";
-    const img = imageFor(e.id);
     // clicks anywhere on the row preview (div.onclick below); the .preview
     // button is what makes that reachable from the keyboard
     div.innerHTML = `
       <button type="button" class="preview">
-        <span class="thumb">${img ? `<img src="${img}" alt="" loading="lazy" decoding="async">` : e.emoji}</span>
+        <span class="thumb">${e.emoji}</span>
         <span class="info">
           <span class="name">${e.name}</span>
           <span class="meme">${e.meme}</span>
@@ -825,9 +919,11 @@ function renderSlots() {
       ${customImages[e.id] ? `<button type="button" class="act" data-act="reset" title="Back to default"
               aria-label="Back to the default image for ${e.name}">✕</button>` : ""}
     `;
-    // a missing image file falls back to the emoji
-    const thumbImg = div.querySelector(".thumb img");
-    if (thumbImg) thumbImg.onerror = () => (thumbImg.parentElement.textContent = e.emoji);
+    const src = imageFor(e.id);
+    if (src) {
+      const thumb = div.querySelector(".thumb");
+      thumb.replaceChildren(memeImg(src, () => (thumb.textContent = e.emoji), true));
+    }
     div.onclick = () => previewMeme(e);
     div.querySelector('[data-act="pick"]').onclick = ev => {
       ev.stopPropagation();
@@ -894,13 +990,13 @@ let previewTimer = 0;
 let lastFrameAt = -Infinity; // when the tracking loop last processed a frame
 
 function showMeme(expr) {
-  const img = imageFor(expr.id);
-  bubble.innerHTML = img
-    ? `<img src="${img}" alt="">`
-    : `<div class="emoji">${expr.emoji}</div>`;
-  const popImg = bubble.querySelector("img");
-  if (popImg) popImg.onerror = () => (bubble.innerHTML = `<div class="emoji">${expr.emoji}</div>`);
+  const emoji = document.createElement("div");
+  emoji.className = "emoji";
+  emoji.textContent = expr.emoji;
+  const src = imageFor(expr.id);
+  bubble.replaceChildren(src ? memeImg(src, () => bubble.replaceChildren(emoji)) : emoji);
   labelEl.textContent = expr.name;
+  announceEl.textContent = expr.name;
   popup.classList.add("visible");
   document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
   document.getElementById("slot_" + expr.id)?.classList.add("active");
@@ -909,6 +1005,7 @@ function showMeme(expr) {
 
 function hideMeme() {
   popup.classList.remove("visible");
+  announceEl.textContent = ""; // so the same meme is read out again next time
   document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
 }
 
@@ -1005,6 +1102,7 @@ function resetTracking() {
   lastFace = null;
   current = null; candidate = null; candidateFrames = 0;
   trackingFailed = false;
+  photoFrames = 0;
   clearProblem();
   hideMeme();
 }
@@ -1099,6 +1197,7 @@ function snapshot() {
 
   try {
     c.toBlob(blob => {
+      if (!blob) { console.error("Snapshot: the browser couldn't turn the picture into a PNG."); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `meme-${Date.now()}.png`;
@@ -1123,30 +1222,81 @@ snapBtn.onclick = snapshot;
 // ---------- main ----------
 let faceLandmarker, gestureRecognizer;
 
+// why the camera didn't start, in words short enough for the status pill
+function cameraProblem(err) {
+  const orPhoto = ", or tap 🖼 Try a photo.";
+  // some in-app browsers, and pages not opened over https, have no camera at all
+  if (!navigator.mediaDevices?.getUserMedia) return "This browser can't use the camera here — try Chrome or Safari" + orPhoto;
+  switch (err?.name) {
+    case "NotAllowedError":
+    case "SecurityError":
+      return "Camera blocked — allow camera access and reload" + orPhoto;
+    case "NotFoundError":
+      return "No camera found — connect one and reload" + orPhoto;
+    case "NotReadableError":
+    case "AbortError":
+      return "The camera is busy — close other apps using it and reload" + orPhoto;
+    default:
+      return "Couldn't start the camera — reload" + orPhoto;
+  }
+}
+
 // resolves to null once the camera picture is live, or to the error if it isn't
 async function startCamera() {
+  wantCamera = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const s = await navigator.mediaDevices.getUserMedia({
       // "ideal" (not fixed) so phones can serve a portrait stream instead of
       // being forced into an awkward rotated landscape frame
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
     });
+    // a photo was picked while the permission prompt was up: leave the camera off
+    if (!wantCamera) { s.getTracks().forEach(t => t.stop()); return null; }
+    stream = s;
     video.srcObject = stream;
     await new Promise(r => (video.onloadedmetadata = r));
     cameraReady();
+    cameraFailed = false;
     return null;
   } catch (err) {
+    cameraFailed = true;
     return err;
+  }
+}
+
+function stopCamera() {
+  stream?.getTracks().forEach(t => t.stop());
+  stream = null;
+  video.srcObject = null;
+}
+
+// The online version keeps a copy of itself (sw.js), so it also opens with no
+// connection after the first visit. Not on localhost: there the files are on
+// this computer already, and the worker would stay behind on that port and
+// answer for whatever is served there next.
+async function keepOfflineCopy() {
+  if (!navigator.serviceWorker || !location.protocol.startsWith("http")) return; // e.g. opened straight from disk
+  if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return;
+  try {
+    await navigator.serviceWorker.register("sw.js");
+    const { active, scope } = await navigator.serviceWorker.ready;
+    // tell it what was loaded before it took over, so that one visit is enough
+    const loaded = performance.getEntriesByType("resource").map(r => r.name);
+    active.postMessage({ type: "keep", urls: [scope, ...loaded] });
+  } catch (err) {
+    console.warn("No offline copy this time:", err);
   }
 }
 
 async function init() {
   // ?photo=memes/rock.webp opens a picture instead of the camera (handy for tuning)
   const photoParam = new URLSearchParams(location.search).get("photo");
-  if (photoParam) usePhoto(photoParam);
   // ask for the camera now, while the models (~13 MB) download, instead of
-  // after them: the permission prompt and your picture show up right away
-  const cameraReady = startCamera();
+  // after them: the permission prompt and your picture show up right away.
+  // With ?photo= the camera stays off until "Back to camera" is tapped.
+  let cameraStart = null;
+  if (photoParam) usePhoto(photoParam);
+  else cameraStart = startCamera();
   try {
     await loadVisionLib();
     const wasmBase = LOCAL_ASSETS ? "vendor/wasm" : CDN + "/wasm";
@@ -1174,32 +1324,41 @@ async function init() {
     statusEl.textContent = "Failed to load models — check your internet connection.";
     console.error(err);
     // nothing can be tracked, so don't leave the camera on
-    cameraReady.then(() => stream?.getTracks().forEach(t => t.stop()));
+    cameraStart?.then(stopCamera);
     return;
   }
 
   requestAnimationFrame(loop);
+  keepOfflineCopy();
 
-  if (!problemShown) statusEl.textContent = photoParam // keep "Couldn't open that picture"
-    ? "Photo mode — tap 📷 Back to camera in the panel to go live."
-    : "Requesting camera…"; // only stays up while the camera prompt is unanswered
-
-  const cameraErr = await cameraReady;
+  if (photoParam) {
+    if (!problemShown) statusEl.textContent = "Photo mode — tap 📷 Back to camera in the panel to go live.";
+    return;
+  }
+  // "Requesting camera…" only stays up while the camera prompt is unanswered
+  if (!problemShown) statusEl.textContent = "Requesting camera…"; // keep "Couldn't open that picture"
+  const cameraErr = await cameraStart;
+  if (!wantCamera) { // a photo was picked in the meantime
+    if (!problemShown) statusEl.style.display = "none";
+    return;
+  }
   if (cameraErr) {
-    if (!photoParam) statusEl.textContent = "Camera blocked — allow camera access and reload, or tap 🖼 Try a photo.";
+    statusEl.textContent = cameraProblem(cameraErr);
     console.error(cameraErr);
     return;
   }
 
-  if (photoParam) return;
   statusEl.textContent = "Try: ✋✋ hold still (cinema) · 🤨 raise one eyebrow · 🧠 tap your temple · 🤿 pinch nose";
-  setTimeout(() => (statusEl.style.display = "none"), 7000);
+  problemShown = false;
+  setTimeout(() => { if (!problemShown) statusEl.style.display = "none"; }, 7000);
 }
 
 let lastVideoTime = -1;
 let lastTs = 0;
 let lastFace = null; // { lm, t } — recent face, for when a hand covers it
 let trackingFailed = false; // detection threw on this picture; reported once
+const PHOTO_BURST = 48; // frames tracked at full speed on a new photo (HIST plus the longest hold)
+let photoFrames = 0;
 
 function loop() {
   requestAnimationFrame(loop);
@@ -1207,8 +1366,12 @@ function loop() {
   if (mode === "camera") {
     if (video.readyState < 2 || video.currentTime === lastVideoTime) return;
     lastVideoTime = video.currentTime;
-  } else if (!photo.complete || !photo.naturalWidth) {
-    return;
+  } else {
+    if (!photo.complete || !photo.naturalWidth) return;
+    // a still picture gives the same answer every time: once every meme has
+    // had the frames it needs, look 10 times a second instead of every frame
+    if (photoFrames >= PHOTO_BURST && performance.now() - lastFrameAt < 100) return;
+    photoFrames++;
   }
   if (overlay.width !== srcW() || overlay.height !== srcH()) {
     overlay.width = srcW();

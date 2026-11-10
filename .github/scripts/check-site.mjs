@@ -1,7 +1,8 @@
 // Sanity checks for the static site (run by .github/workflows/check.yml).
 // Usage: node .github/scripts/check-site.mjs
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -45,7 +46,52 @@ for (const ref of refs) {
   if (ref && !existsSync(join(SITE, ref))) fail(`index.html refers to ${ref}, which doesn't exist`);
 }
 
-// 4. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
+// 4. the web app manifest is valid JSON and its icons exist
+try {
+  const manifest = JSON.parse(readFileSync(join(SITE, "manifest.webmanifest"), "utf8"));
+  for (const icon of manifest.icons ?? []) {
+    if (!existsSync(join(SITE, icon.src))) fail(`manifest.webmanifest refers to ${icon.src}, which doesn't exist`);
+  }
+} catch (err) {
+  fail(`manifest.webmanifest can't be read: ${err.message}`);
+}
+
+// 5. the service worker parses, and saves the vendor files under the same
+//    MediaPipe version the page uses (a new version must replace the saved copy)
+const swFile = join(SITE, "sw.js");
+try {
+  execFileSync(process.execPath, ["--check", swFile], { stdio: "pipe" });
+} catch (err) {
+  fail(`sw.js has a syntax error:\n${err.stderr}`);
+}
+const pageVersion = html.match(/tasks-vision@([\d.]+)/)?.[1];
+const swVersion = readFileSync(swFile, "utf8").match(/const MEDIAPIPE = "([^"]+)"/)?.[1];
+if (!pageVersion || pageVersion !== swVersion) {
+  fail(`MediaPipe is ${pageVersion} in index.html (CDN) but ${swVersion} in sw.js (MEDIAPIPE)`);
+}
+
+// 6. the vendored MediaPipe files are exactly the ones recorded in
+//    vendor/SHA256SUMS (unmodified copies of the published package and models)
+const VENDOR = join(SITE, "vendor");
+const OURS = new Set(["README.md", "LICENSE", "SHA256SUMS"]);
+const sums = new Map(readFileSync(join(VENDOR, "SHA256SUMS"), "utf8").trim().split(/\r?\n/).map(line => {
+  const [hash, file] = line.split(/\s+/);
+  return [file, hash];
+}));
+for (const [file, hash] of sums) {
+  const path = join(VENDOR, file);
+  if (!existsSync(path)) fail(`vendor/SHA256SUMS lists ${file}, which doesn't exist`);
+  else if (createHash("sha256").update(readFileSync(path)).digest("hex") !== hash) {
+    fail(`vendor/${file} doesn't match its checksum in vendor/SHA256SUMS`);
+  }
+}
+for (const file of readdirSync(VENDOR, { recursive: true }).map(f => f.replaceAll("\\", "/"))) {
+  if (statSync(join(VENDOR, file)).isFile() && !OURS.has(file) && !sums.has(file)) {
+    fail(`vendor/${file} has no checksum in vendor/SHA256SUMS`);
+  }
+}
+
+// 7. the Mac launcher can be double-clicked (exec bits are meaningless on Windows)
 if (process.platform !== "win32" && !(statSync(join(SITE, "start.command")).mode & 0o111)) {
   fail("start.command is not executable (git update-index --chmod=+x)");
 }
@@ -54,4 +100,4 @@ if (errors.length) {
   console.error(errors.map(e => "✗ " + e).join("\n"));
   process.exit(1);
 }
-console.log(`✓ script parses, ${ids.length} memes have images, ${refs.size} local references exist`);
+console.log(`✓ script parses, ${ids.length} memes have images, ${refs.size} local references exist, ${sums.size} vendor files match`);

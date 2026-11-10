@@ -19,6 +19,6 @@ jobs:
         with:
           node-version: 24
       - name: Validate HTML
-        run: npx --yes html-validate@11.19.0 meme-face-tracker/index.html
-      - name: Check the script, meme images, file links and launchers
+        run: npx --yes html-validate@11.21.0 meme-face-tracker/index.html
+      - name: Check the scripts, meme images, file links, vendored files and launchers
         run: node .github/scripts/check-site.mjs

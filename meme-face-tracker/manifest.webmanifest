@@ -1,0 +1,15 @@
+{
+  "name": "Brainrot Meme Face Tracker",
+  "short_name": "Meme Tracker",
+  "description": "Make the face or do the gesture and the matching meme pops up over your head. Runs in your browser; the camera never leaves your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e0e14",
+  "theme_color": "#0e0e14",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
