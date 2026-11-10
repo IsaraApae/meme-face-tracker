@@ -775,6 +775,7 @@ async function useCamera() {
   mode = "camera";
   wrapEl.classList.remove("photo");
   photoBtn.textContent = "🖼 Try a photo";
+  statusEl.style.display = "none"; // e.g. the "Photo mode" line of a ?photo= page
   resetTracking();
 }
 
@@ -1020,6 +1021,7 @@ function resetTracking() {
   lastFace = null;
   current = null; candidate = null; candidateFrames = 0;
   trackingFailed = false;
+  photoFrames = 0;
   clearProblem();
   hideMeme();
 }
@@ -1254,6 +1256,8 @@ let lastVideoTime = -1;
 let lastTs = 0;
 let lastFace = null; // { lm, t } — recent face, for when a hand covers it
 let trackingFailed = false; // detection threw on this picture; reported once
+const PHOTO_BURST = 48; // frames tracked at full speed on a new photo (HIST plus the longest hold)
+let photoFrames = 0;
 
 function loop() {
   requestAnimationFrame(loop);
@@ -1261,8 +1265,12 @@ function loop() {
   if (mode === "camera") {
     if (video.readyState < 2 || video.currentTime === lastVideoTime) return;
     lastVideoTime = video.currentTime;
-  } else if (!photo.complete || !photo.naturalWidth) {
-    return;
+  } else {
+    if (!photo.complete || !photo.naturalWidth) return;
+    // a still picture gives the same answer every time: once every meme has
+    // had the frames it needs, look 10 times a second instead of every frame
+    if (photoFrames >= PHOTO_BURST && performance.now() - lastFrameAt < 100) return;
+    photoFrames++;
   }
   if (overlay.width !== srcW() || overlay.height !== srcH()) {
     overlay.width = srcW();
