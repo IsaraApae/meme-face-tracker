@@ -881,6 +881,18 @@ filePicker.addEventListener("change", async () => {
   renderSlots();
 });
 
+// A meme picture, built as an element instead of HTML text: a custom image
+// comes out of localStorage, which every page on this site's address can
+// write to. A missing or broken image calls onMissing (falls back to the emoji).
+function memeImg(src, onMissing, lazy = false) {
+  const img = new Image();
+  img.alt = "";
+  if (lazy) { img.loading = "lazy"; img.decoding = "async"; }
+  img.onerror = onMissing;
+  img.src = src;
+  return img;
+}
+
 function renderSlots() {
   slotsEl.innerHTML = "";
   for (const e of EXPRESSIONS) {
@@ -888,12 +900,11 @@ function renderSlots() {
     div.className = "slot";
     div.id = "slot_" + e.id;
     div.title = "Tap to preview";
-    const img = imageFor(e.id);
     // clicks anywhere on the row preview (div.onclick below); the .preview
     // button is what makes that reachable from the keyboard
     div.innerHTML = `
       <button type="button" class="preview">
-        <span class="thumb">${img ? `<img src="${img}" alt="" loading="lazy" decoding="async">` : e.emoji}</span>
+        <span class="thumb">${e.emoji}</span>
         <span class="info">
           <span class="name">${e.name}</span>
           <span class="meme">${e.meme}</span>
@@ -905,9 +916,11 @@ function renderSlots() {
       ${customImages[e.id] ? `<button type="button" class="act" data-act="reset" title="Back to default"
               aria-label="Back to the default image for ${e.name}">✕</button>` : ""}
     `;
-    // a missing image file falls back to the emoji
-    const thumbImg = div.querySelector(".thumb img");
-    if (thumbImg) thumbImg.onerror = () => (thumbImg.parentElement.textContent = e.emoji);
+    const src = imageFor(e.id);
+    if (src) {
+      const thumb = div.querySelector(".thumb");
+      thumb.replaceChildren(memeImg(src, () => (thumb.textContent = e.emoji), true));
+    }
     div.onclick = () => previewMeme(e);
     div.querySelector('[data-act="pick"]').onclick = ev => {
       ev.stopPropagation();
@@ -974,12 +987,11 @@ let previewTimer = 0;
 let lastFrameAt = -Infinity; // when the tracking loop last processed a frame
 
 function showMeme(expr) {
-  const img = imageFor(expr.id);
-  bubble.innerHTML = img
-    ? `<img src="${img}" alt="">`
-    : `<div class="emoji">${expr.emoji}</div>`;
-  const popImg = bubble.querySelector("img");
-  if (popImg) popImg.onerror = () => (bubble.innerHTML = `<div class="emoji">${expr.emoji}</div>`);
+  const emoji = document.createElement("div");
+  emoji.className = "emoji";
+  emoji.textContent = expr.emoji;
+  const src = imageFor(expr.id);
+  bubble.replaceChildren(src ? memeImg(src, () => bubble.replaceChildren(emoji)) : emoji);
   labelEl.textContent = expr.name;
   announceEl.textContent = expr.name;
   popup.classList.add("visible");
@@ -1182,6 +1194,7 @@ function snapshot() {
 
   try {
     c.toBlob(blob => {
+      if (!blob) { console.error("Snapshot: the browser couldn't turn the picture into a PNG."); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `meme-${Date.now()}.png`;
