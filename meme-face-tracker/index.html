@@ -278,6 +278,12 @@
     .actions button { padding: 11px; font-size: 15px; }
   }
 
+  /* for people who asked their device for less motion: no pop-in, no white flash */
+  @media (prefers-reduced-motion: reduce) {
+    #memePopup .bubble { animation: none; }
+    #flash { display: none; }
+  }
+
   /* avoid sticky :hover staying highlighted after a tap on touch devices */
   @media (hover: none) {
     .slot .act:hover, .actions button:hover, #snapBtn:hover { background: #33334a; }
