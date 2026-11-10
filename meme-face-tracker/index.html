@@ -1275,7 +1275,8 @@ function stopCamera() {
 // this computer already, and the worker would stay behind on that port and
 // answer for whatever is served there next.
 async function keepOfflineCopy() {
-  if (!navigator.serviceWorker || ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return;
+  if (!navigator.serviceWorker || !location.protocol.startsWith("http")) return; // e.g. opened straight from disk
+  if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) return;
   try {
     await navigator.serviceWorker.register("sw.js");
     const { active, scope } = await navigator.serviceWorker.ready;
