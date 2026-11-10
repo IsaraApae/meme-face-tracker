@@ -278,6 +278,16 @@
     .actions button { padding: 11px; font-size: 15px; }
   }
 
+  /* read out by screen readers, not shown */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   /* for people who asked their device for less motion: no pop-in, no white flash */
   @media (prefers-reduced-motion: reduce) {
     #memePopup .bubble { animation: none; }
@@ -308,6 +318,8 @@
     <div id="flash"></div>
     <div id="debug"></div>
   </div>
+  <!-- the name of the meme that just popped up, for screen readers -->
+  <div id="announce" class="sr-only" role="status"></div>
 </main>
 
 <aside id="panel">
@@ -696,6 +708,7 @@ const debugEl = document.getElementById("debug");
 const popup = document.getElementById("memePopup");
 const bubble = document.getElementById("memeBubble");
 const labelEl = document.getElementById("memeLabel");
+const announceEl = document.getElementById("announce");
 const slotsEl = document.getElementById("slots");
 const filePicker = document.getElementById("filePicker");
 const photoPicker = document.getElementById("photoPicker");
@@ -968,6 +981,7 @@ function showMeme(expr) {
   const popImg = bubble.querySelector("img");
   if (popImg) popImg.onerror = () => (bubble.innerHTML = `<div class="emoji">${expr.emoji}</div>`);
   labelEl.textContent = expr.name;
+  announceEl.textContent = expr.name;
   popup.classList.add("visible");
   document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
   document.getElementById("slot_" + expr.id)?.classList.add("active");
@@ -976,6 +990,7 @@ function showMeme(expr) {
 
 function hideMeme() {
   popup.classList.remove("visible");
+  announceEl.textContent = ""; // so the same meme is read out again next time
   document.querySelectorAll(".slot.active").forEach(s => s.classList.remove("active"));
 }
 
