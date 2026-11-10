@@ -801,20 +801,65 @@ for (const e of EXPRESSIONS) {
 }
 const imageFor = id => customImages[id] || DEFAULT_IMAGES[id] || null;
 
-let pickingFor = null;
-filePicker.addEventListener("change", () => {
-  const file = filePicker.files[0];
-  filePicker.value = "";
-  if (!file || !pickingFor) return;
+const KEEP_AS_IS = 200 * 1024; // files up to this size are stored untouched
+const CUSTOM_MAX = 512;        // longest side of a stored copy, same as the bundled memes
+
+const readAsDataURL = file => new Promise((resolve, reject) => {
   const reader = new FileReader();
-  reader.onload = () => {
-    customImages[pickingFor] = reader.result;
-    if (!store.set("meme_" + pickingFor, reader.result)) {
-      alert("Image too large to save between sessions — it will still work until you reload.");
-    }
-    renderSlots();
-  };
+  reader.onload = () => resolve(reader.result);
+  reader.onerror = () => reject(reader.error);
   reader.readAsDataURL(file);
+});
+
+// A phone photo is several MB, more than a page may keep in the browser, so
+// it was gone after a reload. Store a copy no bigger than the bundled memes
+// instead. GIFs are kept whole (a copy would stop moving), and so are small files.
+async function customImageUrl(file) {
+  if (file.type === "image/gif" || file.size <= KEEP_AS_IS) return readAsDataURL(file);
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const k = Math.min(1, CUSTOM_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * k);
+    c.height = Math.round(img.naturalHeight * k);
+    const g = c.getContext("2d");
+    g.drawImage(img, 0, 0, c.width, c.height);
+    const webp = c.toDataURL("image/webp", 0.85);
+    if (webp.startsWith("data:image/webp")) return webp;
+    // no WebP encoder (Safari): JPEG, or PNG when the picture has see-through parts
+    const px = g.getImageData(0, 0, c.width, c.height).data;
+    let opaque = true;
+    for (let i = 3; i < px.length && opaque; i += 4) opaque = px[i] === 255;
+    return c.toDataURL(opaque ? "image/jpeg" : "image/png", 0.85);
+  } catch {
+    return readAsDataURL(file); // a format the browser can't redraw: keep the file as it is
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+let pickingFor = null;
+filePicker.addEventListener("change", async () => {
+  const file = filePicker.files[0];
+  const id = pickingFor;
+  filePicker.value = "";
+  if (!file || !id) return;
+  let url;
+  try {
+    url = await customImageUrl(file);
+  } catch (err) {
+    alert("Couldn't read that image. Try another one.");
+    console.error(err);
+    return;
+  }
+  customImages[id] = url;
+  if (!store.set("meme_" + id, url)) {
+    alert("Image too large to save between sessions — it will still work until you reload.");
+  }
+  renderSlots();
 });
 
 function renderSlots() {
